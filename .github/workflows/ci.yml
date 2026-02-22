@@ -7,7 +7,13 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    env:
+      SBT_OPTS: -Xms1G -Xmx4G -XX:+UseG1GC
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
 
     steps:
       - uses: actions/checkout@v6
@@ -30,10 +36,17 @@ jobs:
 
       - uses: sbt/setup-sbt@v1
 
-      - name: Install native build tools
+      - name: Install native build tools (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build python3 file
+
+      - name: Install native build tools (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install cmake ninja
 
       - name: Build Z3 WASI artifact
         run: ./scripts/build-z3-wasi.sh
@@ -50,9 +63,10 @@ jobs:
         run: ./scripts/browser-smoke.js
 
       - name: Compile and test JVM + JS
-        run: sbt 'coreJVM/test' 'coreJS/test'
+        run: sbt -J-Xms1G -J-Xmx4G -J-XX:+UseG1GC 'coreJVM/test' 'coreJS/test'
 
       - name: Upload WASI artifacts
+        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: z3-wasi-artifacts

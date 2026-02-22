@@ -21,7 +21,7 @@ function main() {
   }));
 
   const output = {
-    wasm: path.resolve(wasmPath),
+    wasm: path.basename(wasmPath),
     importCount: imports.length,
     imports,
   };

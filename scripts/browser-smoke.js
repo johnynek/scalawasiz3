@@ -70,7 +70,7 @@ async function main() {
       }
 
       const bytes = await resp.arrayBuffer();
-      const mod = new WebAssembly.Module(bytes);
+      const mod = await WebAssembly.compile(bytes);
       const imports = WebAssembly.Module.imports(mod);
       return {
         ok: true,

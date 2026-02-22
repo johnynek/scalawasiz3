@@ -1,11 +1,8 @@
 package dev.bosatsu.scalawasiz3
 
-import scala.concurrent.Future
-import scala.concurrent.ExecutionContext.Implicits.global
-
 class Z3SolverSmokeSuite extends munit.FunSuite {
   test("runSmt2 returns a result instance") {
-    Z3Solver.default.runSmt2("(check-sat)").map {
+    Z3Solver.default.runSmt2("(check-sat)") match {
       case _: Z3Result.Success => assert(true)
       case _: Z3Result.Failure => assert(true)
     }
@@ -16,9 +13,7 @@ class Z3SolverSmokeSuite extends munit.FunSuite {
     val one = solver.runSmt2("(check-sat)")
     val two = solver.runSmt2("(check-sat)")
 
-    one.zip(two).map { pair =>
-      assert(pair._1 != null)
-      assert(pair._2 != null)
-    }
+    assert(one != null)
+    assert(two != null)
   }
 }

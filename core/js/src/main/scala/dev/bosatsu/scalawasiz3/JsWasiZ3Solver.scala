@@ -1,8 +1,6 @@
 package dev.bosatsu.scalawasiz3
 
 import scala.collection.mutable.ArrayBuilder
-import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
 import scala.scalajs.js
 import scala.scalajs.js.typedarray.ArrayBuffer
 import scala.scalajs.js.typedarray.DataView
@@ -11,9 +9,7 @@ import scala.scalajs.js.typedarray.Uint8Array
 import java.nio.charset.StandardCharsets
 
 private[scalawasiz3] object JsWasiZ3Solver extends Z3Solver {
-  private val ec: ExecutionContext = ExecutionContext.global
-
-  def runSmt2(input: String): Future[Z3Result] = Future {
+  def runSmt2(input: String): Z3Result = {
     val wasm = EmbeddedWasmBytes.wasm
     if (wasm.isEmpty) {
       Z3Result.Failure(
@@ -66,7 +62,7 @@ private[scalawasiz3] object JsWasiZ3Solver extends Z3Solver {
           )
       }
     }
-  }(using ec)
+  }
 
   private def normalizeInput(input: String): String = {
     val withNl = if (input.endsWith("\n")) input else s"$input\n"
@@ -131,15 +127,25 @@ private[scalawasiz3] object JsWasiZ3Solver extends Z3Solver {
             cause = Some(jse)
           )
         case None =>
-          Z3Result.Failure(
-            message = s"Scala.js runtime exception while running z3.wasm: ${jse.getMessage}",
-            exitCode = None,
-            stdout = stdoutString,
-            stderr = stderrString,
-            cause = Some(jse)
-          )
+          if (containsStatusLine(stdoutString)) {
+            Z3Result.Success(stdout = stdoutString, stderr = stderrString)
+          } else {
+            Z3Result.Failure(
+              message = s"Scala.js runtime exception while running z3.wasm: ${jse.getMessage}",
+              exitCode = None,
+              stdout = stdoutString,
+              stderr = stderrString,
+              cause = Some(jse)
+            )
+          }
       }
     }
+
+    private def containsStatusLine(stdout: String): Boolean =
+      stdout.linesIterator.exists { line =>
+        val trimmed = line.trim
+        trimmed == "sat" || trimmed == "unsat" || trimmed == "unknown"
+      }
 
     private def extractExitCode(value: Any): Option[Int] = {
       val dyn = value.asInstanceOf[js.Dynamic]
@@ -174,9 +180,10 @@ private[scalawasiz3] object JsWasiZ3Solver extends Z3Solver {
       memoryView().setUint32(ptr, value, littleEndian = true)
 
     private def writeU64(ptr: Int, value: Long): Unit = {
-      val jsBigInt = js.Dynamic.global.BigInt(value.toString)
-      memoryView().asInstanceOf[js.Dynamic].callDynamic("setBigUint64")(ptr, jsBigInt, true)
-      ()
+      val low = (value & 0xffffffffL).toInt
+      val high = ((value >>> 32) & 0xffffffffL).toInt
+      writeU32(ptr, low)
+      writeU32(ptr + 4, high)
     }
 
     private def readBytes(ptr: Int, len: Int): Array[Byte] = {
