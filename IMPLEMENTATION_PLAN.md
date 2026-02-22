@@ -29,7 +29,7 @@
 
 ## Phase 2: Z3 WASI build pipeline (scripted)
 
-- [ ] Add `scripts/build-z3-wasi.sh` that:
+- [x] Add `scripts/build-z3-wasi.sh` that:
   - validates required host tools (`bash`, `curl`, `tar`, `cmake`, `ninja`, `python3`)
   - downloads pinned Z3 source tarball/tag
   - downloads pinned WASI SDK release (host-specific archive)
@@ -37,7 +37,7 @@
   - configures CMake with WASI toolchain
   - builds the Z3 CLI executable as WebAssembly
   - copies final artifact to project resources
-- [ ] Start with this CMake configuration (adjust only if build proves otherwise):
+- [x] Start with this CMake configuration (adjust only if build proves otherwise):
   - `-DCMAKE_TOOLCHAIN_FILE=<wasi-sdk>/share/cmake/wasi-sdk.cmake`
   - `-DCMAKE_BUILD_TYPE=Release`
   - `-DZ3_BUILD_LIBZ3_SHARED=OFF`
@@ -49,7 +49,7 @@
   - `-DZ3_BUILD_DOCUMENTATION=OFF`
   - `-DZ3_SINGLE_THREADED=ON`
   - `-DZ3_POLLING_TIMER=ON`
-- [ ] Ensure script output is deterministic and CI-friendly:
+- [x] Ensure script output is deterministic and CI-friendly:
   - build dir under `target/` (or `.cache/`)
   - explicit output path for wasm (e.g. `core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm`)
   - emit artifact SHA256 to a small metadata file next to wasm
@@ -83,7 +83,7 @@
 
 ## Phase 5: Import-surface validation for JS/browser
 
-- [ ] Add a script/check to inspect wasm imports after build (store import list artifact in CI).
+- [x] Add a script/check to inspect wasm imports after build (store import list artifact in CI).
 - [ ] Use that import list to drive browser host implementation scope.
 - [ ] If import surface grows unexpectedly, fail CI with actionable message.
 
