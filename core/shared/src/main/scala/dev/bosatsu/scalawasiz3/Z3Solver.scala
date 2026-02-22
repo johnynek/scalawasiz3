@@ -1,9 +1,7 @@
 package dev.bosatsu.scalawasiz3
 
-import scala.concurrent.Future
-
 trait Z3Solver {
-  def runSmt2(input: String): Future[Z3Result]
+  def runSmt2(input: String): Z3Result
 }
 
 object Z3Solver {

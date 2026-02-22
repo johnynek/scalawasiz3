@@ -1,8 +1,6 @@
 package dev.bosatsu.scalawasiz3
 
 import scala.collection.mutable.ArrayBuilder
-import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
 import scala.scalajs.js
 import scala.scalajs.js.typedarray.ArrayBuffer
 import scala.scalajs.js.typedarray.DataView
@@ -11,9 +9,7 @@ import scala.scalajs.js.typedarray.Uint8Array
 import java.nio.charset.StandardCharsets
 
 private[scalawasiz3] object JsWasiZ3Solver extends Z3Solver {
-  private val ec: ExecutionContext = ExecutionContext.global
-
-  def runSmt2(input: String): Future[Z3Result] = Future {
+  def runSmt2(input: String): Z3Result = {
     val wasm = EmbeddedWasmBytes.wasm
     if (wasm.isEmpty) {
       Z3Result.Failure(
@@ -66,7 +62,7 @@ private[scalawasiz3] object JsWasiZ3Solver extends Z3Solver {
           )
       }
     }
-  }(using ec)
+  }
 
   private def normalizeInput(input: String): String = {
     val withNl = if (input.endsWith("\n")) input else s"$input\n"

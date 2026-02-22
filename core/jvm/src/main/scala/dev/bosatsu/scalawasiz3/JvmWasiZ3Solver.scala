@@ -14,12 +14,8 @@ import com.dylibso.chicory.wasm.WasmModule
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
-import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
 
 private[scalawasiz3] object JvmWasiZ3Solver extends Z3Solver {
-  private val ec: ExecutionContext = ExecutionContext.global
-
   private lazy val wasmBytesEither: Either[String, Array[Byte]] = {
     val stream = Option(getClass.getResourceAsStream(Z3WasmResource.ClasspathResourcePath))
     stream match {
@@ -45,7 +41,7 @@ private[scalawasiz3] object JvmWasiZ3Solver extends Z3Solver {
       }
     }
 
-  def runSmt2(input: String): Future[Z3Result] = Future {
+  def runSmt2(input: String): Z3Result = {
     wasmModuleEither match {
       case Left(err) =>
         Z3Result.Failure(
@@ -116,7 +112,7 @@ private[scalawasiz3] object JvmWasiZ3Solver extends Z3Solver {
           wasi.close()
         }
     }
-  }(using ec)
+  }
 
   private def normalizeInput(input: String): String = {
     val trimmed = if (input.endsWith("\n")) input else s"$input\n"

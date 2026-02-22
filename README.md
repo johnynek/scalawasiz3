@@ -62,10 +62,10 @@ This keeps a single source of truth (`z3.wasm`) while producing a JS-friendly ru
 import dev.bosatsu.scalawasiz3.Z3Solver
 
 val solver = Z3Solver.default
-val resultF = solver.runSmt2("(check-sat)")
+val result = solver.runSmt2("(check-sat)")
 ```
 
-`runSmt2` returns `Future[Z3Result]`, with:
+`runSmt2` returns `Z3Result`, with:
 
 - `Z3Result.Success(stdout, stderr, exitCode = 0)`
 - `Z3Result.Failure(message, exitCode, stdout, stderr, cause)`
