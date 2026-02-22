@@ -31,15 +31,6 @@ ThisBuild / developers := List(
 
 ThisBuild / Test / fork := false
 
-lazy val root = project
-  .in(file("."))
-  .aggregate(core.jvm, core.js)
-  .settings(
-    name := "scalawasiz3-root",
-    moduleName := "scalawasiz3-root",
-    publish / skip := true
-  )
-
 lazy val core =
   crossProject(JSPlatform, JVMPlatform)
     .crossType(CrossType.Full)
@@ -183,4 +174,24 @@ lazy val core =
     )
 
 lazy val coreJVM = core.jvm
+  .enablePlugins(NativeImagePlugin)
+  .settings(
+    Compile / mainClass := Some("dev.bosatsu.scalawasiz3.Main"),
+    nativeImageJvm := "graalvm-java17",
+    nativeImageVersion := "22.3.0",
+    nativeImageOptions ++= Seq(
+      "--no-fallback",
+      "-H:IncludeResources=dev/bosatsu/scalawasiz3/z3/.*"
+    ),
+    nativeImageOutput := (Compile / target).value / "native-image" / "scalawasiz3-z3-main"
+  )
 lazy val coreJS = core.js
+
+lazy val root = project
+  .in(file("."))
+  .aggregate(coreJVM, coreJS)
+  .settings(
+    name := "scalawasiz3-root",
+    moduleName := "scalawasiz3-root",
+    publish / skip := true
+  )

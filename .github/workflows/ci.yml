@@ -65,6 +65,23 @@ jobs:
       - name: Compile and test JVM + JS
         run: sbt -J-Xms1G -J-Xmx4G -J-XX:+UseG1GC 'coreJVM/test' 'coreJS/test'
 
+      - name: Build Scala.js Node main
+        run: |
+          sbt -J-Xms1G -J-Xmx4G -J-XX:+UseG1GC \
+            "set coreJS / scalaJSLinkerConfig ~= (_.withModuleKind(org.scalajs.linker.interface.ModuleKind.CommonJSModule))" \
+            "set coreJS / scalaJSUseMainModuleInitializer := true" \
+            "set coreJS / Compile / mainClass := Some(\"dev.bosatsu.scalawasiz3.NodeMain\")" \
+            'coreJS/fullLinkJS'
+
+      - name: Node main SAT/UNSAT smoke test
+        run: ./scripts/node-main-smoke.sh core/js/target/scala-3.8.1/scalawasiz3-opt/main.js
+
+      - name: Build native image wrapper
+        run: sbt -J-Xms1G -J-Xmx4G -J-XX:+UseG1GC 'coreJVM/nativeImage'
+
+      - name: Native image SAT/UNSAT smoke test
+        run: ./scripts/native-image-smoke.sh core/jvm/target/native-image/scalawasiz3-z3-main
+
       - name: Upload WASI artifacts
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
