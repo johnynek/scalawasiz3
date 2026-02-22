@@ -40,13 +40,13 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build python3 file
+          sudo apt-get install -y cmake ninja-build python3 file z3
 
       - name: Install native build tools (macOS)
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install cmake ninja
+          brew install cmake ninja z3
 
       - name: Build Z3 WASI artifact
         run: ./scripts/build-z3-wasi.sh
@@ -64,6 +64,12 @@ jobs:
 
       - name: Compile and test JVM + JS
         run: sbt -J-Xms1G -J-Xmx4G -J-XX:+UseG1GC 'coreJVM/test' 'coreJS/test'
+
+      - name: Build native image wrapper
+        run: sbt -J-Xms1G -J-Xmx4G -J-XX:+UseG1GC 'nativeCli/nativeImage'
+
+      - name: Native image SAT/UNSAT smoke test
+        run: ./scripts/native-image-smoke.sh native-cli/target/native-image/scalawasiz3-z3-stdin
 
       - name: Upload WASI artifacts
         if: runner.os == 'Linux'

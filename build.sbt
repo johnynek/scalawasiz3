@@ -33,7 +33,7 @@ ThisBuild / Test / fork := false
 
 lazy val root = project
   .in(file("."))
-  .aggregate(core.jvm, core.js)
+  .aggregate(core.jvm, core.js, nativeCli)
   .settings(
     name := "scalawasiz3-root",
     moduleName := "scalawasiz3-root",
@@ -184,3 +184,17 @@ lazy val core =
 
 lazy val coreJVM = core.jvm
 lazy val coreJS = core.js
+
+lazy val nativeCli = project
+  .in(file("native-cli"))
+  .enablePlugins(NativeImagePlugin)
+  .settings(
+    name := "scalawasiz3-native-cli",
+    moduleName := "scalawasiz3-native-cli",
+    publish / skip := true,
+    Compile / mainClass := Some("dev.bosatsu.scalawasiz3.nativecli.Main"),
+    nativeImageJvm := "graalvm-java17",
+    nativeImageVersion := "22.3.0",
+    nativeImageOptions ++= Seq("--no-fallback"),
+    nativeImageOutput := (Compile / target).value / "native-image" / "scalawasiz3-z3-stdin"
+  )
