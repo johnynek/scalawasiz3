@@ -26,6 +26,8 @@ A Scala 3.8.1 cross-platform library that embeds a WASI build of Z3 and exposes 
 sbt 'coreJVM/test' 'coreJS/test'
 ```
 
+This repository includes a `.jvmopts` with a 4G heap because Scala.js linking for the embedded wasm payload is memory-intensive.
+
 ## Build embedded Z3 WASI
 
 ```bash
@@ -50,7 +52,7 @@ After build, these files are updated:
 
 ## Scala.js wasm embedding path
 
-Scala.js cannot load classpath resources at runtime like JVM. For JS, this project generates a managed Scala source that embeds the wasm bytes in chunked literal arrays, then reconstructs one contiguous byte array at runtime.
+Scala.js cannot load classpath resources at runtime like JVM. For JS, this project generates a managed Scala source that embeds the wasm bytes as chunked base64 literals, then decodes and reconstructs one contiguous byte array at runtime.
 
 This keeps a single source of truth (`z3.wasm`) while producing a JS-friendly runtime representation.
 

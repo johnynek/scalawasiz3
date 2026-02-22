@@ -8,6 +8,8 @@ on:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    env:
+      SBT_OPTS: -Xms1G -Xmx4G -XX:+UseG1GC
     strategy:
       fail-fast: false
       matrix:
@@ -61,7 +63,7 @@ jobs:
         run: ./scripts/browser-smoke.js
 
       - name: Compile and test JVM + JS
-        run: sbt 'coreJVM/test' 'coreJS/test'
+        run: sbt -J-Xms1G -J-Xmx4G -J-XX:+UseG1GC 'coreJVM/test' 'coreJS/test'
 
       - name: Upload WASI artifacts
         uses: actions/upload-artifact@v4

@@ -1,30 +1,32 @@
 package dev.bosatsu.scalawasiz3
 
-import scala.concurrent.Await
-import scala.concurrent.duration.DurationInt
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 
 class Z3RealEvaluationSuite extends munit.FunSuite {
 
   test("Z3 evaluates assert true as sat") {
     if (requireRealWasm()) {
-      val result = runSmt2("(assert true)\n(check-sat)\n")
-      assertStatus(result, expected = "sat")
+      runSmt2("(assert true)\n(check-sat)\n").map { result =>
+        assertStatus(result, expected = "sat")
+      }
     } else {
-      assert(true)
+      Future.unit
     }
   }
 
   test("Z3 evaluates assert false as unsat") {
     if (requireRealWasm()) {
-      val result = runSmt2("(assert false)\n(check-sat)\n")
-      assertStatus(result, expected = "unsat")
+      runSmt2("(assert false)\n(check-sat)\n").map { result =>
+        assertStatus(result, expected = "unsat")
+      }
     } else {
-      assert(true)
+      Future.unit
     }
   }
 
-  private def runSmt2(input: String): Z3Result =
-    Await.result(Z3Solver.default.runSmt2(input), 60.seconds)
+  private def runSmt2(input: String): Future[Z3Result] =
+    Z3Solver.default.runSmt2(input)
 
   private def assertStatus(result: Z3Result, expected: String): Unit =
     result match {
