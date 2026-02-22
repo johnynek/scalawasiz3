@@ -7,7 +7,11 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
 
     steps:
       - uses: actions/checkout@v6
@@ -30,10 +34,17 @@ jobs:
 
       - uses: sbt/setup-sbt@v1
 
-      - name: Install native build tools
+      - name: Install native build tools (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build python3 file
+
+      - name: Install native build tools (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install cmake ninja
 
       - name: Build Z3 WASI artifact
         run: ./scripts/build-z3-wasi.sh
