@@ -6,9 +6,9 @@
 - [x] Use package namespace `dev.bosatsu.scalawasiz3`.
 - [x] Place source/resource files under `dev/bosatsu/scalawasiz3` paths.
 - [ ] Build and publish a Scala library that exposes a simple string-in/string-out Z3 API.
-- [ ] Keep runtime dependencies minimal: users depend on this library only.
+- [x] Keep runtime dependencies minimal: users depend on this library only.
 - [ ] Build Z3 as a WASI module locally in this repo, and embed that `.wasm` in published jars.
-- [ ] Support JVM (via Chicory) and Scala.js (Node + browser) behind one consistent Scala API.
+- [x] Support JVM (via Chicory) and Scala.js (Node + browser) behind one consistent Scala API.
 
 ## Phase 1: Repository and sbt scaffolding
 
@@ -56,45 +56,45 @@
 
 ## Phase 3: Resource embedding strategy
 
-- [ ] Treat `z3.wasm` as a first-class packaged resource in shared module jars.
-- [ ] JVM access path:
+- [x] Treat `z3.wasm` as a first-class packaged resource in shared module jars.
+- [x] JVM access path:
   - load bytes from classpath resource (`getResourceAsStream`)
   - feed bytes directly to Chicory parser
-- [ ] Scala.js access path:
+- [x] Scala.js access path:
   - do not rely on JVM classloader APIs (not available in Scala.js runtime)
-  - implement Scala 3 macro that reads `z3.wasm` at compile time and emits chunked literal byte arrays
+  - generate Scala source at build time that embeds chunked literal byte arrays from `z3.wasm`
   - reconstruct one contiguous `Array[Byte]` at runtime from generated chunks
   - keep source of truth as the packaged resource file so the published jar still contains wasm
 
 ## Phase 4: Runtime API and execution wrappers
 
-- [ ] Define shared API (simple at first):
+- [x] Define shared API (simple at first):
   - input: SMT-LIB string
   - output: stdout string (or structured success/error ADT)
-- [ ] JVM implementation (`coreJVM`):
+- [x] JVM implementation (`coreJVM`):
   - use Chicory `WasiPreview1`
   - wire stdin/stdout/stderr with byte array streams
   - instantiate module and execute command-style `_start`
   - return stdout, map non-zero/proc_exit to library error type
-- [ ] JS implementation (`coreJS`) with two execution environments:
+- [x] JS implementation (`coreJS`) with two execution environments:
   - Node: use WASI-compatible import wiring suited for Node runtime.
   - Browser: provide a minimal Preview1 import object for the exact imports required by built `z3.wasm`.
-- [ ] Keep the same Scala API for both targets and hide environment-specific details.
+- [x] Keep the same Scala API for both targets and hide environment-specific details.
 
 ## Phase 5: Import-surface validation for JS/browser
 
 - [x] Add a script/check to inspect wasm imports after build (store import list artifact in CI).
-- [ ] Use that import list to drive browser host implementation scope.
-- [ ] If import surface grows unexpectedly, fail CI with actionable message.
+- [x] Use that import list to drive browser host implementation scope.
+- [x] If import surface grows unexpectedly, fail CI with actionable message.
 
 ## Phase 6: Tests
 
-- [ ] Shared behavior tests for the facade API.
-- [ ] JVM integration tests:
+- [x] Shared behavior tests for the facade API.
+- [x] JVM integration tests:
   - smoke test `(check-sat)` request through stdin/stdout path.
-- [ ] Scala.js Node tests:
+- [x] Scala.js Node tests:
   - same smoke test under Node JS env.
-- [ ] Browser smoke test:
+- [x] Browser smoke test:
   - run minimal browser execution test in CI (headless) to prove web support.
 - [ ] Regression tests:
   - resource presence check in packaged artifacts
@@ -102,7 +102,7 @@
 
 ## Phase 7: GitHub Actions CI/CD
 
-- [ ] `ci.yml` workflow:
+- [x] `ci.yml` workflow:
   - checkout
   - setup Java + sbt
   - setup build dependencies for WASI/Z3 script
@@ -110,18 +110,19 @@
   - run JVM + JS tests
   - run browser smoke test
   - upload wasm/import-manifest/test artifacts
-- [ ] Cache strategy:
+- [x] Cache strategy:
   - cache Coursier/Ivy/sbt
   - cache downloaded WASI SDK and Z3 source tarballs by version key
-- [ ] `release.yml` workflow:
+- [x] `release.yml` workflow:
   - based on `sbt-ci-release` flow
   - add pre-release step that rebuilds/verifies `z3.wasm`
   - run `sbt ci-release` for Maven Central publishing
 
 ## Phase 8: Maven Central publishing setup
 
-- [ ] Use `sbt-ci-release` with Central Portal credentials.
-- [ ] Configure required GitHub secrets:
+- [x] Use `sbt-ci-release` with Central Portal credentials.
+- [x] Publish module as `dev.bosatsu:scalawasiz3` (module name `scalawasiz3`).
+- [x] Configure required GitHub secrets:
   - `PGP_SECRET`
   - `PGP_PASSPHRASE`
   - `SONATYPE_USERNAME`
@@ -131,14 +132,18 @@
   - Scala.js artifacts
   - embedded `z3.wasm` resource
 
+## Release asset publishing
+
+- [x] Attach `z3.wasm` and built jars to GitHub release assets on tag pushes.
+
 ## Phase 9: Hardening and documentation
 
-- [ ] Add README sections:
+- [x] Add README sections:
   - architecture overview
   - how wasm is built/updated
   - JVM/JS runtime behavior
   - supported environments and caveats
-- [ ] Document upgrade playbook:
+- [x] Document upgrade playbook:
   - bump Z3
   - bump WASI SDK
   - rebuild wasm
@@ -148,13 +153,13 @@
 
 - [x] 1. sbt scaffold + cross-project layout
 - [ ] 2. `build-z3-wasi.sh` end-to-end producing `z3.wasm`
-- [ ] 3. resource embedding + JVM loading path
-- [ ] 4. JVM Chicory wrapper + JVM tests
-- [ ] 5. Scala.js byte-embedding + Node wrapper + Node tests
-- [ ] 6. browser wrapper + browser smoke test
-- [ ] 7. CI workflows
-- [ ] 8. release/publishing wiring
-- [ ] 9. docs + upgrade playbook
+- [x] 3. resource embedding + JVM loading path
+- [x] 4. JVM Chicory wrapper + JVM tests
+- [x] 5. Scala.js byte-embedding + Node wrapper + Node tests
+- [x] 6. browser wrapper + browser smoke test
+- [x] 7. CI workflows
+- [x] 8. release/publishing wiring
+- [x] 9. docs + upgrade playbook
 
 ## Notes to validate early (high risk)
 

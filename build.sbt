@@ -30,7 +30,8 @@ lazy val root = project
   .in(file("."))
   .aggregate(core.jvm, core.js)
   .settings(
-    name := "dev.bosatsu.scalawasiz3-root",
+    name := "scalawasiz3-root",
+    moduleName := "scalawasiz3-root",
     publish / skip := true
   )
 
@@ -39,7 +40,8 @@ lazy val core =
     .crossType(CrossType.Full)
     .in(file("core"))
     .settings(
-      name := "dev.bosatsu.scalawasiz3",
+      name := "scalawasiz3",
+      moduleName := "scalawasiz3",
       libraryDependencies += "org.scalameta" %%% "munit" % munitVersion % Test
     )
     .jvmSettings(

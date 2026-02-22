@@ -9,3 +9,5 @@ core/**/target/
 .DS_Store
 *.swp
 *.tmp
+
+node_modules/
