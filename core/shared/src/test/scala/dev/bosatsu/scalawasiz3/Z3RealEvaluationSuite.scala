@@ -3,17 +3,13 @@ package dev.bosatsu.scalawasiz3
 class Z3RealEvaluationSuite extends munit.FunSuite {
 
   test("Z3 evaluates assert true as sat") {
-    if (requireRealWasm()) {
-      val result = runSmt2("(assert true)\n(check-sat)\n")
-      assertStatus(result, expected = "sat")
-    }
+    val result = runSmt2("(assert true)\n(check-sat)\n")
+    assertStatus(result, expected = "sat")
   }
 
   test("Z3 evaluates assert false as unsat") {
-    if (requireRealWasm()) {
-      val result = runSmt2("(assert false)\n(check-sat)\n")
-      assertStatus(result, expected = "unsat")
-    }
+    val result = runSmt2("(assert false)\n(check-sat)\n")
+    assertStatus(result, expected = "unsat")
   }
 
   private def runSmt2(input: String): Z3Result =
@@ -37,19 +33,4 @@ class Z3RealEvaluationSuite extends munit.FunSuite {
       .linesIterator
       .map(_.trim)
       .find(line => line == "sat" || line == "unsat" || line == "unknown")
-
-  private def requireRealWasm(): Boolean = {
-    val maybeBytes = Option(getClass.getResourceAsStream(Z3WasmResource.ClasspathResourcePath)).map { in =>
-      try in.readAllBytes()
-      finally in.close()
-    }
-
-    val isReal = maybeBytes.exists(_.length > 8)
-    if (!isReal) {
-      println(
-        "Skipping real Z3 assertion checks: placeholder z3.wasm detected. CI builds the real WASI binary first."
-      )
-    }
-    isReal
-  }
 }
