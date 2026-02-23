@@ -1,16 +1,26 @@
 import org.scalajs.linker.interface.ModuleKind
 import sbtcrossproject.CrossPlugin.autoImport.{CrossType, crossProject}
+import net.jpountz.lz4.LZ4Factory
 import java.io.BufferedWriter
-import java.io.ByteArrayOutputStream
 import java.io.FileOutputStream
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 import java.util.Base64
-import java.util.zip.GZIPOutputStream
 
 val chicoryVersion = "1.4.0"
 val munitVersion = "1.1.1"
+val munitScalacheckVersion = "1.1.0"
+val lz4JavaVersion = "1.8.0"
 lazy val ensureZ3WasmResources = taskKey[Unit]("Ensure generated Z3 WASM resources exist before compilation.")
+
+def lz4Compress(rawBytes: Array[Byte]): Array[Byte] = {
+  val compressor = LZ4Factory.fastestInstance().highCompressor()
+  val maxCompressedLength = compressor.maxCompressedLength(rawBytes.length)
+  val compressedBuffer = new Array[Byte](maxCompressedLength)
+  val compressedLength =
+    compressor.compress(rawBytes, 0, rawBytes.length, compressedBuffer, 0, maxCompressedLength)
+  java.util.Arrays.copyOf(compressedBuffer, compressedLength)
+}
 
 ThisBuild / organization := "dev.bosatsu"
 ThisBuild / scalaVersion := "3.8.1"
@@ -67,7 +77,9 @@ lazy val core =
       libraryDependencies ++= Seq(
         "com.dylibso.chicory" % "runtime" % chicoryVersion,
         "com.dylibso.chicory" % "wasm" % chicoryVersion,
-        "com.dylibso.chicory" % "wasi" % chicoryVersion
+        "com.dylibso.chicory" % "wasi" % chicoryVersion,
+        "org.lz4" % "lz4-java" % lz4JavaVersion % Test,
+        "org.scalameta" %% "munit-scalacheck" % munitScalacheckVersion % Test
       )
     )
     .jsSettings(
@@ -93,19 +105,14 @@ lazy val core =
 
         try {
           val bytes = IO.readBytes(wasmFile)
-          val gzipOut = new ByteArrayOutputStream(math.max(1024, bytes.length / 3))
-          val gzip = new GZIPOutputStream(gzipOut)
-          try {
-            gzip.write(bytes)
-          } finally {
-            gzip.close()
-          }
-          val compressedBytes = gzipOut.toByteArray
+          val uncompressedSize = bytes.length
+          val compressedBytes = lz4Compress(bytes)
           val encoder = Base64.getEncoder
 
           writer.write("package dev.bosatsu.scalawasiz3\n\n")
           writer.write("private[scalawasiz3] object EmbeddedWasmBytes {\n")
-          writer.write("  private val gzippedBase64Chunks: Array[String] = Array(\n")
+          writer.write(s"  val uncompressedSize: Int = $uncompressedSize\n\n")
+          writer.write("  private val lz4Base64Chunks: Array[String] = Array(\n")
 
           var first = true
           val chunkIter = compressedBytes.grouped(chunkSize)
@@ -123,7 +130,7 @@ lazy val core =
 
           writer.write(
             """  def wasm: Option[Array[Byte]] =
-              |    EmbeddedWasmSupport.decodeAndGunzip(gzippedBase64Chunks)
+              |    EmbeddedWasmSupport.decodeAndDecompressLz4(lz4Base64Chunks, uncompressedSize)
               |}
               |""".stripMargin
           )
