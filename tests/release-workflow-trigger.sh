@@ -70,17 +70,32 @@ if ! grep -Eq "OUT_WASM:[[:space:]]*\\$\\{\\{ env\\.RELEASE_ASSET_DIR \\}\\}/z3\
   exit 1
 fi
 
-if ! grep -Eq "check-js-wasi-coverage\\.js[[:space:]]+\\$\\{\\{ env\\.RELEASE_ASSET_DIR \\}\\}/z3\\.wasm" "$workflow_file"; then
-  echo "WASI import coverage must validate the release-assets wasm output" >&2
+if ! grep -Eq "check-js-wasi-coverage\\.js[[:space:]]+core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3\\.wasm" "$workflow_file"; then
+  echo "WASI import coverage must validate the checked-in resource path used by JS/JVM packaging" >&2
   exit 1
 fi
 
-if ! grep -Eq "^[[:space:]]*target/release-assets/z3\\.wasm$" "$workflow_file"; then
-  echo "GitHub release upload must include target/release-assets/z3.wasm" >&2
+if ! grep -Eq "^[[:space:]]*core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3\\.wasm$" "$workflow_file"; then
+  echo "GitHub release upload must include checked-in z3.wasm resource" >&2
   exit 1
 fi
 
-if ! grep -Eq "^[[:space:]]*target/release-assets/z3\\.wasm\\.sha256$" "$workflow_file"; then
-  echo "GitHub release upload must include target/release-assets/z3.wasm.sha256" >&2
+if ! grep -Eq "^[[:space:]]*core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3\\.wasm\\.sha256$" "$workflow_file"; then
+  echo "GitHub release upload must include checked-in z3.wasm.sha256 resource" >&2
+  exit 1
+fi
+
+if ! grep -Eq "name:[[:space:]]*Ensure checked-in WASM resources are release-ready" "$workflow_file"; then
+  echo "release workflow must verify generated wasm matches checked-in resources before publish" >&2
+  exit 1
+fi
+
+if ! grep -Eq 'cmp -s[[:space:]]+"\$built_wasm"[[:space:]]+"\$tracked_wasm"' "$workflow_file"; then
+  echo "release workflow must compare generated and checked-in z3.wasm" >&2
+  exit 1
+fi
+
+if ! grep -Eq 'cmp -s[[:space:]]+"\$built_sha"[[:space:]]+"\$tracked_sha"' "$workflow_file"; then
+  echo "release workflow must compare generated and checked-in z3.wasm.sha256" >&2
   exit 1
 fi

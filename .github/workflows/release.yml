@@ -77,7 +77,27 @@ jobs:
         run: ./scripts/build-z3-wasi.sh
 
       - name: Validate JS WASI import coverage
-        run: ./scripts/check-js-wasi-coverage.js ${{ env.RELEASE_ASSET_DIR }}/z3.wasm
+        run: ./scripts/check-js-wasi-coverage.js core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm
+
+      - name: Ensure checked-in WASM resources are release-ready
+        run: |
+          set -euo pipefail
+          tracked_wasm="core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm"
+          tracked_sha="core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm.sha256"
+          built_wasm="${{ env.RELEASE_ASSET_DIR }}/z3.wasm"
+          built_sha="${{ env.RELEASE_ASSET_DIR }}/z3.wasm.sha256"
+
+          if ! cmp -s "$built_wasm" "$tracked_wasm"; then
+            echo "error: built z3.wasm differs from checked-in resource ($tracked_wasm)." >&2
+            echo "run ./scripts/build-z3-wasi.sh locally and commit the updated resource files before tagging." >&2
+            exit 1
+          fi
+
+          if ! cmp -s "$built_sha" "$tracked_sha"; then
+            echo "error: built z3.wasm.sha256 differs from checked-in resource ($tracked_sha)." >&2
+            echo "run ./scripts/build-z3-wasi.sh locally and commit the updated resource files before tagging." >&2
+            exit 1
+          fi
 
       - name: Publish
         if: startsWith(github.ref, 'refs/tags/')
@@ -105,8 +125,8 @@ jobs:
           set -euo pipefail
           mkdir -p "${{ env.RELEASE_ASSET_DIR }}"
           shasum -a 256 \
-            "${{ env.RELEASE_ASSET_DIR }}/z3.wasm" \
-            "${{ env.RELEASE_ASSET_DIR }}/z3.wasm.sha256" \
+            core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm \
+            core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm.sha256 \
             core/jvm/target/scala-3.8.1/scalawasiz3*.jar \
             core/js/target/scala-3.8.1/scalawasiz3*.jar \
             > "${{ env.RELEASE_ASSET_DIR }}/SHA256SUMS"
@@ -116,8 +136,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            target/release-assets/z3.wasm
-            target/release-assets/z3.wasm.sha256
+            core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm
+            core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm.sha256
             core/jvm/target/scala-3.8.1/scalawasiz3*.jar
             core/js/target/scala-3.8.1/scalawasiz3*.jar
             target/release-assets/SHA256SUMS
