@@ -80,6 +80,11 @@ if ! grep -Eq "^[[:space:]]*core/shared/src/main/resources/dev/bosatsu/scalawasi
   exit 1
 fi
 
+if ! grep -Eq "^[[:space:]]*core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3\\.imports\\.json$" "$workflow_file"; then
+  echo "GitHub release upload must include z3.imports.json resource" >&2
+  exit 1
+fi
+
 if grep -Eq "OUT_WASM:[[:space:]]*\\$\\{\\{ env\\.RELEASE_ASSET_DIR \\}\\}/z3\\.wasm" "$workflow_file"; then
   echo "release workflow should build z3.wasm into the runtime resource path, not release-assets" >&2
   exit 1
