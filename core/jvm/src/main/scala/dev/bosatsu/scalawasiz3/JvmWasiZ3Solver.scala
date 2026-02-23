@@ -115,8 +115,8 @@ private[scalawasiz3] object JvmWasiZ3Solver extends Z3Solver {
   }
 
   private def normalizeInput(input: String): String = {
-    val trimmed = if (input.endsWith("\n")) input else s"$input\n"
-    if (trimmed.contains("(exit)")) trimmed else s"$trimmed(exit)\n"
+    val withNl = if (input.endsWith("\n")) input else s"$input\n"
+    if (withNl.contains("(exit)")) withNl else s"$withNl(exit)\n"
   }
 
   private def asUtf8(out: ByteArrayOutputStream): String =
