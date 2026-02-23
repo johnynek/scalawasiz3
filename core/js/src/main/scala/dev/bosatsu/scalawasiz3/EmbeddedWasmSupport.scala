@@ -1,9 +1,27 @@
 package dev.bosatsu.scalawasiz3
 
 import scala.scalajs.js
+import scala.scalajs.js.typedarray.ArrayBuffer
 import scala.scalajs.js.typedarray.Uint8Array
 
 private[scalawasiz3] object EmbeddedWasmSupport {
+  private sealed trait BrowserGunzipState
+  private object BrowserGunzipState {
+    case object Idle extends BrowserGunzipState
+    case object Running extends BrowserGunzipState
+    case object Failed extends BrowserGunzipState
+    final case class Ready(bytes: Array[Byte]) extends BrowserGunzipState
+  }
+
+  private var cachedCompressedChunks: Array[String] = null
+  private var cachedCompressedBytes: Array[Byte] = null
+
+  private var cachedWasmChunks: Array[String] = null
+  private var cachedWasmBytes: Array[Byte] = null
+
+  private var browserChunks: Array[String] = null
+  private var browserState: BrowserGunzipState = BrowserGunzipState.Idle
+
   private val decodeTable: Array[Int] = {
     val table = Array.fill(256)(-1)
     val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
@@ -17,9 +35,35 @@ private[scalawasiz3] object EmbeddedWasmSupport {
   }
 
   def decodeAndGunzip(base64Chunks: Array[String]): Option[Array[Byte]] = {
-    val compressed = decodeBase64Chunks(base64Chunks)
-    gunzipOnNode(compressed)
+    cachedWasm(base64Chunks).orElse {
+      val compressed = compressedBytes(base64Chunks)
+      gunzipOnNode(compressed)
+        .map { bytes =>
+          cacheWasm(base64Chunks, bytes)
+          bytes
+        }
+        .orElse(gunzipOnBrowser(base64Chunks, compressed))
+    }
   }
+
+  private def cachedWasm(base64Chunks: Array[String]): Option[Array[Byte]] =
+    if ((cachedWasmChunks eq base64Chunks) && (cachedWasmBytes != null)) Some(cachedWasmBytes)
+    else None
+
+  private def cacheWasm(base64Chunks: Array[String], bytes: Array[Byte]): Unit = {
+    cachedWasmChunks = base64Chunks
+    cachedWasmBytes = bytes
+  }
+
+  private def compressedBytes(base64Chunks: Array[String]): Array[Byte] =
+    if ((cachedCompressedChunks eq base64Chunks) && (cachedCompressedBytes != null)) {
+      cachedCompressedBytes
+    } else {
+      val decoded = decodeBase64Chunks(base64Chunks)
+      cachedCompressedChunks = base64Chunks
+      cachedCompressedBytes = decoded
+      decoded
+    }
 
   private def decodeBase64Chunks(base64Chunks: Array[String]): Array[Byte] = {
     val decodedChunks = new Array[Array[Byte]](base64Chunks.length)
@@ -97,6 +141,89 @@ private[scalawasiz3] object EmbeddedWasmSupport {
     }
   }
 
+  private def gunzipOnBrowser(base64Chunks: Array[String], compressed: Array[Byte]): Option[Array[Byte]] = {
+    if (browserChunks ne base64Chunks) {
+      browserChunks = base64Chunks
+      browserState = BrowserGunzipState.Idle
+    }
+
+    browserState match {
+      case BrowserGunzipState.Ready(bytes) =>
+        Some(bytes)
+      case BrowserGunzipState.Running =>
+        None
+      case BrowserGunzipState.Failed =>
+        None
+      case BrowserGunzipState.Idle =>
+        if (supportsBrowserGunzip()) {
+          browserState = BrowserGunzipState.Running
+          beginBrowserGunzip(base64Chunks, compressed)
+        } else {
+          browserState = BrowserGunzipState.Failed
+        }
+        None
+    }
+  }
+
+  private def supportsBrowserGunzip(): Boolean = {
+    val decompressionStream = globalDecompressionStreamCtor()
+    val readableStream = globalReadableStreamCtor()
+    val response = globalResponseCtor()
+    decompressionStream.nonEmpty && readableStream.nonEmpty && response.nonEmpty
+  }
+
+  private def beginBrowserGunzip(base64Chunks: Array[String], compressed: Array[Byte]): Unit = {
+    val maybeReady =
+      for {
+        decompressionStreamCtor <- globalDecompressionStreamCtor()
+        readableStreamCtor <- globalReadableStreamCtor()
+        responseCtor <- globalResponseCtor()
+      } yield (decompressionStreamCtor, readableStreamCtor, responseCtor)
+
+    maybeReady match {
+      case Some((decompressionStreamCtor, readableStreamCtor, responseCtor)) =>
+        try {
+          val source = js.Dynamic.literal(
+            start = ((controller: js.Dynamic) => {
+              controller.enqueue(toUint8Array(compressed))
+              controller.close()
+            }): js.Function1[js.Dynamic, Unit]
+          )
+          val inputStream = js.Dynamic.newInstance(readableStreamCtor)(source)
+          val decompressor = js.Dynamic.newInstance(decompressionStreamCtor)("gzip")
+          val decompressedStream = inputStream.pipeThrough(decompressor)
+          val response = js.Dynamic.newInstance(responseCtor)(decompressedStream)
+          val promise = response.arrayBuffer().asInstanceOf[js.Promise[ArrayBuffer]]
+          promise.`then`[Unit](
+            { (ab: ArrayBuffer) =>
+              val bytes = toByteArray(new Uint8Array(ab))
+              if (browserChunks eq base64Chunks) {
+                browserState = BrowserGunzipState.Ready(bytes)
+                cacheWasm(base64Chunks, bytes)
+              }
+              ()
+            },
+            { (_: Any) =>
+              if (browserChunks eq base64Chunks) {
+                browserState = BrowserGunzipState.Failed
+              }
+              ()
+            }
+          )
+          ()
+        } catch {
+          case _: Throwable =>
+            if (browserChunks eq base64Chunks) {
+              browserState = BrowserGunzipState.Failed
+            }
+        }
+      case None =>
+        if (browserChunks eq base64Chunks) {
+          browserState = BrowserGunzipState.Failed
+        }
+    }
+  }
+
   private def loadNodeModule(name: String): Option[js.Dynamic] = {
     val fromBuiltin = globalProcess().flatMap { process =>
       val getBuiltinModule = process.selectDynamic("getBuiltinModule")
@@ -164,6 +291,33 @@ private[scalawasiz3] object EmbeddedWasmSupport {
     fromGlobalThis(_.selectDynamic("require"))
       .orElse {
         try asDefined(js.Dynamic.global.selectDynamic("require"))
+        catch {
+          case _: Throwable => None
+        }
+      }
+
+  private def globalDecompressionStreamCtor(): Option[js.Dynamic] =
+    fromGlobalThis(_.selectDynamic("DecompressionStream"))
+      .orElse {
+        try asDefined(js.Dynamic.global.selectDynamic("DecompressionStream"))
+        catch {
+          case _: Throwable => None
+        }
+      }
+
+  private def globalReadableStreamCtor(): Option[js.Dynamic] =
+    fromGlobalThis(_.selectDynamic("ReadableStream"))
+      .orElse {
+        try asDefined(js.Dynamic.global.selectDynamic("ReadableStream"))
+        catch {
+          case _: Throwable => None
+        }
+      }
+
+  private def globalResponseCtor(): Option[js.Dynamic] =
+    fromGlobalThis(_.selectDynamic("Response"))
+      .orElse {
+        try asDefined(js.Dynamic.global.selectDynamic("Response"))
         catch {
           case _: Throwable => None
         }

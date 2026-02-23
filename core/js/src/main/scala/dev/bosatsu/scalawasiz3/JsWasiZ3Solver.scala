@@ -29,7 +29,7 @@ private[scalawasiz3] object JsWasiZ3Solver extends Z3Solver {
       case Right(None) =>
         Z3Result.Failure(
           message =
-            "Embedded z3.wasm could not be decompressed for this Scala.js runtime.",
+            "Embedded z3.wasm could not be decompressed for this Scala.js runtime (browser decompression may still be initializing).",
           exitCode = None,
           stdout = "",
           stderr = ""
