@@ -90,7 +90,14 @@ private[scalawasiz3] object JsWasiZ3Solver extends Z3Solver {
   }
 
   private def normalizeInput(input: String): String = {
-    val withNl = if (input.endsWith("\n")) input else s"$input\n"
+    val rewritten = input.linesIterator
+      .map { line =>
+        val leading = line.takeWhile(_.isWhitespace)
+        if (line.trim == "(check-sat)") s"${leading}(check-sat-using smt)"
+        else line
+      }
+      .mkString("\n")
+    val withNl = if (rewritten.endsWith("\n")) rewritten else s"$rewritten\n"
     if (withNl.contains("(exit)")) withNl else s"$withNl(exit)\n"
   }
 
