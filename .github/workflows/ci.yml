@@ -54,13 +54,17 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build python3 file
+          sudo apt-get install -y cmake ninja-build python3 file patch
 
       - name: Install native build tools (macOS)
         if: runner.os == 'macOS'
         run: |
           brew update
           brew install cmake ninja
+
+      - name: Run upstream Z3 C/C++ test suite
+        if: runner.os == 'Linux'
+        run: ./scripts/run-z3-cpp-tests.sh
 
       - name: Build Z3 WASI artifact
         run: ./scripts/build-z3-wasi.sh
