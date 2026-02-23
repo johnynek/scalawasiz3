@@ -53,3 +53,34 @@ if ! echo "$publish_step_block" | grep -Eq "^[[:space:]]*if:[[:space:]]*startsWi
   echo "Publish step must be guarded to run only on tag refs" >&2
   exit 1
 fi
+
+validate_line="$(grep -n "name: Validate release tag and version" "$workflow_file" | head -n 1 | cut -d: -f1 || true)"
+build_line="$(grep -n "name: Build Z3 WASI artifact" "$workflow_file" | head -n 1 | cut -d: -f1 || true)"
+if [[ -z "$validate_line" || -z "$build_line" ]]; then
+  echo "release workflow must include both validation and build steps" >&2
+  exit 1
+fi
+if (( validate_line >= build_line )); then
+  echo "release version validation must run before the long Z3 build step" >&2
+  exit 1
+fi
+
+if ! grep -Eq "OUT_WASM:[[:space:]]*\\$\\{\\{ env\\.RELEASE_ASSET_DIR \\}\\}/z3\\.wasm" "$workflow_file"; then
+  echo "Z3 build output must be redirected to release-assets, not tracked source files" >&2
+  exit 1
+fi
+
+if ! grep -Eq "check-js-wasi-coverage\\.js[[:space:]]+\\$\\{\\{ env\\.RELEASE_ASSET_DIR \\}\\}/z3\\.wasm" "$workflow_file"; then
+  echo "WASI import coverage must validate the release-assets wasm output" >&2
+  exit 1
+fi
+
+if ! grep -Eq "^[[:space:]]*target/release-assets/z3\\.wasm$" "$workflow_file"; then
+  echo "GitHub release upload must include target/release-assets/z3.wasm" >&2
+  exit 1
+fi
+
+if ! grep -Eq "^[[:space:]]*target/release-assets/z3\\.wasm\\.sha256$" "$workflow_file"; then
+  echo "GitHub release upload must include target/release-assets/z3.wasm.sha256" >&2
+  exit 1
+fi
