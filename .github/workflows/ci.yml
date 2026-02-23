@@ -26,12 +26,23 @@ jobs:
           path: target/z3-wasi-cache
           key: z3-wasi-${{ runner.os }}-${{ hashFiles('versions.properties') }}
 
+      - name: Cache sbt directories
+        uses: actions/cache@v4
+        with:
+          path: |
+            .sbt-local
+            ~/.ivy2/cache
+            ~/.sbt
+            ~/.cache/coursier
+          key: sbt-${{ runner.os }}-${{ hashFiles('**/*.sbt', 'project/**/*.scala', 'project/build.properties', 'project/plugins.sbt', '.sbtopts', 'versions.properties') }}
+          restore-keys: |
+            sbt-${{ runner.os }}-
+
 
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-          cache: sbt
 
       - uses: actions/setup-node@v6
         with:
