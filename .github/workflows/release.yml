@@ -2,7 +2,6 @@ name: Release
 
 on:
   push:
-    branches: [master, main]
     tags: ["**"]
 
 permissions:
@@ -13,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SBT_OPTS: -Xms1G -Xmx4G -XX:+UseG1GC
+      RELEASE_ASSET_DIR: target/release-assets
 
     steps:
       - uses: actions/checkout@v6
@@ -36,6 +36,25 @@ jobs:
 
       - uses: sbt/setup-sbt@v1
 
+      - name: Validate release tag and version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF#refs/tags/}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "error: expected release tag to match vMAJOR.MINOR.PATCH, got: $tag" >&2
+            exit 1
+          fi
+
+          version="$(
+            sbt -batch -Dsbt.log.noformat=true --error 'print version' \
+              | awk 'NF { line = $0 } END { sub(/^\[info\][[:space:]]*/, "", line); print line }'
+          )"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "error: expected sbt version to match MAJOR.MINOR.PATCH, got: $version" >&2
+            exit 1
+          fi
+
       - name: Install native build tools
         run: |
           sudo apt-get update
@@ -51,13 +70,45 @@ jobs:
           shasum --version
 
       - name: Build Z3 WASI artifact
+        env:
+          OUT_WASM: ${{ env.RELEASE_ASSET_DIR }}/z3.wasm
+          OUT_SHA: ${{ env.RELEASE_ASSET_DIR }}/z3.wasm.sha256
+          OUT_IMPORTS: ${{ env.RELEASE_ASSET_DIR }}/z3.imports.json
         run: ./scripts/build-z3-wasi.sh
 
       - name: Validate JS WASI import coverage
         run: ./scripts/check-js-wasi-coverage.js core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm
 
+      - name: Ensure checked-in WASM resources are release-ready
+        run: |
+          set -euo pipefail
+          tracked_wasm="core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm"
+          tracked_sha="core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm.sha256"
+          built_wasm="${{ env.RELEASE_ASSET_DIR }}/z3.wasm"
+          built_sha="${{ env.RELEASE_ASSET_DIR }}/z3.wasm.sha256"
+
+          if ! cmp -s "$built_wasm" "$tracked_wasm"; then
+            echo "error: built z3.wasm differs from checked-in resource ($tracked_wasm)." >&2
+            echo "run ./scripts/build-z3-wasi.sh locally and commit the updated resource files before tagging." >&2
+            exit 1
+          fi
+
+          if ! cmp -s "$built_sha" "$tracked_sha"; then
+            echo "error: built z3.wasm.sha256 differs from checked-in resource ($tracked_sha)." >&2
+            echo "run ./scripts/build-z3-wasi.sh locally and commit the updated resource files before tagging." >&2
+            exit 1
+          fi
+
       - name: Publish
-        run: sbt -J-Xms1G -J-Xmx4G -J-XX:+UseG1GC ci-release
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+            echo "error: expected clean checkout before publish; release build modified tracked files" >&2
+            git status --short
+            exit 1
+          fi
+          sbt -J-Xms1G -J-Xmx4G -J-XX:+UseG1GC ci-release
         env:
           PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
           PGP_SECRET: ${{ secrets.PGP_SECRET }}
@@ -72,13 +123,13 @@ jobs:
         if: runner.os == 'Linux' && startsWith(github.ref, 'refs/tags/')
         run: |
           set -euo pipefail
-          mkdir -p target/release-assets
+          mkdir -p "${{ env.RELEASE_ASSET_DIR }}"
           shasum -a 256 \
             core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm \
             core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm.sha256 \
             core/jvm/target/scala-3.8.1/scalawasiz3*.jar \
             core/js/target/scala-3.8.1/scalawasiz3*.jar \
-            > target/release-assets/SHA256SUMS
+            > "${{ env.RELEASE_ASSET_DIR }}/SHA256SUMS"
 
       - name: Upload GitHub release assets
         if: startsWith(github.ref, 'refs/tags/')
