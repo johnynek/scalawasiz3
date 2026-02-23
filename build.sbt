@@ -122,7 +122,7 @@ lazy val core =
           writer.write("\n  )\n\n")
 
           writer.write(
-            """  lazy val wasm: Array[Byte] =
+            """  lazy val wasm: Option[Array[Byte]] =
               |    EmbeddedWasmSupport.decodeAndGunzip(gzippedBase64Chunks)
               |}
               |""".stripMargin

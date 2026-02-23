@@ -1,7 +1,6 @@
 package dev.bosatsu.scalawasiz3
 
 import scala.scalajs.js
-import scala.scalajs.js.typedarray.ArrayBuffer
 import scala.scalajs.js.typedarray.Uint8Array
 
 private[scalawasiz3] object EmbeddedWasmSupport {
@@ -17,15 +16,9 @@ private[scalawasiz3] object EmbeddedWasmSupport {
     table
   }
 
-  def decodeAndGunzip(base64Chunks: Array[String]): Array[Byte] = {
+  def decodeAndGunzip(base64Chunks: Array[String]): Option[Array[Byte]] = {
     val compressed = decodeBase64Chunks(base64Chunks)
-    val nodeGunzip = gunzipOnNode(compressed)
-    val nodeFile = if (nodeGunzip.nonEmpty) None else loadNodeWasmResource()
-    val browser = if (nodeGunzip.nonEmpty || nodeFile.nonEmpty) None else loadBrowserWasmResource()
-    nodeGunzip
-      .orElse(nodeFile)
-      .orElse(browser)
-      .getOrElse(Array.emptyByteArray)
+    gunzipOnNode(compressed)
   }
 
   private def decodeBase64Chunks(base64Chunks: Array[String]): Array[Byte] = {
@@ -138,82 +131,6 @@ private[scalawasiz3] object EmbeddedWasmSupport {
     }
   }
 
-  private def loadNodeWasmResource(): Option[Array[Byte]] = {
-    val readFileSync =
-      loadNodeModule("node:fs")
-        .orElse(loadNodeModule("fs"))
-        .flatMap { fs =>
-          val fn = fs.selectDynamic("readFileSync")
-          if (js.isUndefined(fn) || fn == null) None else Some(fn)
-        }
-
-    readFileSync.flatMap { fn =>
-      val candidates = Array(
-        s"core/shared/src/main/resources${Z3WasmResource.ClasspathResourcePath}",
-        s".${Z3WasmResource.ClasspathResourcePath}"
-      )
-      var result: Option[Array[Byte]] = None
-      var idx = 0
-      while (idx < candidates.length && result.isEmpty) {
-        val loaded = readNodeFile(fn, candidates(idx))
-        if (loaded.nonEmpty) result = loaded
-        idx += 1
-      }
-      result
-    }
-  }
-
-  private def loadBrowserWasmResource(): Option[Array[Byte]] = {
-    globalXmlHttpRequest() match {
-      case None =>
-        None
-      case Some(xhrCtor) =>
-        val candidates = Array(
-          Z3WasmResource.ClasspathResourcePath,
-          s"/core/shared/src/main/resources${Z3WasmResource.ClasspathResourcePath}"
-        )
-        var result: Option[Array[Byte]] = None
-        var idx = 0
-        while (idx < candidates.length && result.isEmpty) {
-          val loaded = loadViaSyncXhr(xhrCtor, candidates(idx))
-          if (loaded.nonEmpty) result = loaded
-          idx += 1
-        }
-        result
-    }
-  }
-
-  private def readNodeFile(readFileSync: js.Dynamic, path: String): Option[Array[Byte]] = {
-    try {
-      val bytes = readFileSync.asInstanceOf[js.Function1[String, js.Any]].apply(path)
-      if (js.isUndefined(bytes) || bytes == null) None
-      else Some(toByteArray(bytes.asInstanceOf[Uint8Array]))
-    } catch {
-      case _: Throwable => None
-    }
-  }
-
-  private def loadViaSyncXhr(xhrCtor: js.Dynamic, path: String): Option[Array[Byte]] = {
-    try {
-      val xhr = js.Dynamic.newInstance(xhrCtor)().asInstanceOf[js.Dynamic]
-      xhr.open("GET", path, false)
-      xhr.responseType = "arraybuffer"
-      xhr.send()
-
-      val status = xhr.status.asInstanceOf[Int]
-      val ok = (status >= 200 && status < 300) || status == 0
-      if (!ok) {
-        None
-      } else {
-        val response = xhr.response
-        if (js.isUndefined(response) || response == null) None
-        else Some(toByteArray(new Uint8Array(response.asInstanceOf[ArrayBuffer])))
-      }
-    } catch {
-      case _: Throwable => None
-    }
-  }
-
   private def toUint8Array(bytes: Array[Byte]): Uint8Array = {
     val out = new Uint8Array(bytes.length)
     var i = 0
@@ -247,15 +164,6 @@ private[scalawasiz3] object EmbeddedWasmSupport {
     fromGlobalThis(_.selectDynamic("require"))
       .orElse {
         try asDefined(js.Dynamic.global.selectDynamic("require"))
-        catch {
-          case _: Throwable => None
-        }
-      }
-
-  private def globalXmlHttpRequest(): Option[js.Dynamic] =
-    fromGlobalThis(_.selectDynamic("XMLHttpRequest"))
-      .orElse {
-        try asDefined(js.Dynamic.global.selectDynamic("XMLHttpRequest"))
         catch {
           case _: Throwable => None
         }

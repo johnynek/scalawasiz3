@@ -10,7 +10,7 @@ import java.nio.charset.StandardCharsets
 
 private[scalawasiz3] object JsWasiZ3Solver extends Z3Solver {
   def runSmt2(input: String): Z3Result = {
-    val wasmOrError: Either[Throwable, Array[Byte]] =
+    val wasmOrError: Either[Throwable, Option[Array[Byte]]] =
       try Right(EmbeddedWasmBytes.wasm)
       catch {
         case t: Throwable => Left(t)
@@ -26,7 +26,15 @@ private[scalawasiz3] object JsWasiZ3Solver extends Z3Solver {
           stderr = "",
           cause = Some(t)
         )
-      case Right(wasm) =>
+      case Right(None) =>
+        Z3Result.Failure(
+          message =
+            "Embedded z3.wasm could not be decompressed for this Scala.js runtime.",
+          exitCode = None,
+          stdout = "",
+          stderr = ""
+        )
+      case Right(Some(wasm)) =>
         if (wasm.isEmpty) {
           Z3Result.Failure(
             message =
