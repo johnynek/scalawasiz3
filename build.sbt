@@ -1,5 +1,6 @@
 import org.scalajs.linker.interface.ModuleKind
 import sbtcrossproject.CrossPlugin.autoImport.{CrossType, crossProject}
+import net.jpountz.lz4.LZ4Factory
 import java.io.BufferedWriter
 import java.io.FileOutputStream
 import java.io.OutputStreamWriter
@@ -8,7 +9,18 @@ import java.util.Base64
 
 val chicoryVersion = "1.4.0"
 val munitVersion = "1.1.1"
+val munitScalacheckVersion = "1.1.0"
+val lz4JavaVersion = "1.8.0"
 lazy val ensureZ3WasmResources = taskKey[Unit]("Ensure generated Z3 WASM resources exist before compilation.")
+
+def lz4Compress(rawBytes: Array[Byte]): Array[Byte] = {
+  val compressor = LZ4Factory.fastestInstance().highCompressor()
+  val maxCompressedLength = compressor.maxCompressedLength(rawBytes.length)
+  val compressedBuffer = new Array[Byte](maxCompressedLength)
+  val compressedLength =
+    compressor.compress(rawBytes, 0, rawBytes.length, compressedBuffer, 0, maxCompressedLength)
+  java.util.Arrays.copyOf(compressedBuffer, compressedLength)
+}
 
 ThisBuild / organization := "dev.bosatsu"
 ThisBuild / scalaVersion := "3.8.1"
@@ -65,7 +77,9 @@ lazy val core =
       libraryDependencies ++= Seq(
         "com.dylibso.chicory" % "runtime" % chicoryVersion,
         "com.dylibso.chicory" % "wasm" % chicoryVersion,
-        "com.dylibso.chicory" % "wasi" % chicoryVersion
+        "com.dylibso.chicory" % "wasi" % chicoryVersion,
+        "org.lz4" % "lz4-java" % lz4JavaVersion % Test,
+        "org.scalameta" %% "munit-scalacheck" % munitScalacheckVersion % Test
       )
     )
     .jsSettings(
@@ -91,14 +105,17 @@ lazy val core =
 
         try {
           val bytes = IO.readBytes(wasmFile)
+          val uncompressedSize = bytes.length
+          val compressedBytes = lz4Compress(bytes)
           val encoder = Base64.getEncoder
 
           writer.write("package dev.bosatsu.scalawasiz3\n\n")
           writer.write("private[scalawasiz3] object EmbeddedWasmBytes {\n")
-          writer.write("  private val base64Chunks: Array[String] = Array(\n")
+          writer.write(s"  val uncompressedSize: Int = $uncompressedSize\n\n")
+          writer.write("  private val lz4Base64Chunks: Array[String] = Array(\n")
 
           var first = true
-          val chunkIter = bytes.grouped(chunkSize)
+          val chunkIter = compressedBytes.grouped(chunkSize)
           while (chunkIter.hasNext) {
             val encoded = encoder.encodeToString(chunkIter.next())
             if (!first) {
@@ -112,73 +129,8 @@ lazy val core =
           writer.write("\n  )\n\n")
 
           writer.write(
-            """  private val decodeTable: Array[Int] = {
-              |    val table = Array.fill(256)(-1)
-              |    val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-              |    var i = 0
-              |    while (i < alphabet.length) {
-              |      table(alphabet.charAt(i).toInt) = i
-              |      i += 1
-              |    }
-              |    table('='.toInt) = 0
-              |    table
-              |  }
-              |
-              |  private def decodeChunk(chunk: String): Array[Byte] = {
-              |    val len = chunk.length
-              |    var padding = 0
-              |    if (len >= 1 && chunk.charAt(len - 1) == '=') padding += 1
-              |    if (len >= 2 && chunk.charAt(len - 2) == '=') padding += 1
-              |    val out = new Array[Byte](((len * 3) / 4) - padding)
-              |
-              |    var inPos = 0
-              |    var outPos = 0
-              |    while (inPos < len) {
-              |      val c0 = decodeTable(chunk.charAt(inPos).toInt)
-              |      val c1 = decodeTable(chunk.charAt(inPos + 1).toInt)
-              |      val c2 = decodeTable(chunk.charAt(inPos + 2).toInt)
-              |      val c3 = decodeTable(chunk.charAt(inPos + 3).toInt)
-              |      val bits = (c0 << 18) | (c1 << 12) | (c2 << 6) | c3
-              |
-              |      out(outPos) = ((bits >>> 16) & 0xff).toByte
-              |      outPos += 1
-              |      if (outPos < out.length) {
-              |        out(outPos) = ((bits >>> 8) & 0xff).toByte
-              |        outPos += 1
-              |      }
-              |      if (outPos < out.length) {
-              |        out(outPos) = (bits & 0xff).toByte
-              |        outPos += 1
-              |      }
-              |
-              |      inPos += 4
-              |    }
-              |
-              |    out
-              |  }
-              |
-              |  lazy val wasm: Array[Byte] = {
-              |    val decodedChunks = new Array[Array[Byte]](base64Chunks.length)
-              |    var total = 0
-              |    var idx = 0
-              |    while (idx < base64Chunks.length) {
-              |      val decoded = decodeChunk(base64Chunks(idx))
-              |      decodedChunks(idx) = decoded
-              |      total += decoded.length
-              |      idx += 1
-              |    }
-              |
-              |    val out = new Array[Byte](total)
-              |    var pos = 0
-              |    idx = 0
-              |    while (idx < decodedChunks.length) {
-              |      val chunk = decodedChunks(idx)
-              |      java.lang.System.arraycopy(chunk, 0, out, pos, chunk.length)
-              |      pos += chunk.length
-              |      idx += 1
-              |    }
-              |    out
-              |  }
+            """  def wasm: Option[Array[Byte]] =
+              |    EmbeddedWasmSupport.decodeAndDecompressLz4(lz4Base64Chunks, uncompressedSize)
               |}
               |""".stripMargin
           )
