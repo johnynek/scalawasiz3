@@ -16,6 +16,7 @@ apply_z3_wasi_patches() {
   local hwf_file="$src_dir/src/util/hwf.cpp"
   local util_cmake_file="$src_dir/src/util/CMakeLists.txt"
   local noexcept_stub_file="$src_dir/src/util/wasi_noexcept_stubs.cpp"
+  local probe_patch_file="$ROOT_DIR/scripts/z3-wasi-patches/0001-wasi-noexcept-probe-failif.patch"
 
   if [[ ! -f "$hwf_file" ]]; then
     echo "error: expected Z3 source file at $hwf_file" >&2
@@ -76,6 +77,18 @@ EOF
   if ! grep -q "wasi_noexcept_stubs.cpp" "$util_cmake_file"; then
     echo "error: failed to add WASI exception stubs to $util_cmake_file" >&2
     exit 1
+  fi
+
+  if [[ ! -f "$probe_patch_file" ]]; then
+    echo "error: expected Z3 WASI patch file at $probe_patch_file" >&2
+    exit 1
+  fi
+
+  if ! grep -q "test_without_exceptions" "$src_dir/src/tactic/probe.cpp"; then
+    if ! patch -d "$src_dir" -p1 < "$probe_patch_file"; then
+      echo "error: failed to apply Z3 WASI probe patch $probe_patch_file" >&2
+      exit 1
+    fi
   fi
 }
 
@@ -148,6 +161,7 @@ require_cmd curl
 require_cmd tar
 require_cmd cmake
 require_cmd ninja
+require_cmd patch
 require_cmd perl
 require_cmd python3
 require_cmd file
