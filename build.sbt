@@ -1,10 +1,12 @@
 import org.scalajs.linker.interface.ModuleKind
 import sbtcrossproject.CrossPlugin.autoImport.{CrossType, crossProject}
 import java.io.BufferedWriter
+import java.io.ByteArrayOutputStream
 import java.io.FileOutputStream
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 import java.util.Base64
+import java.util.zip.GZIPOutputStream
 
 val chicoryVersion = "1.4.0"
 val munitVersion = "1.1.1"
@@ -91,14 +93,22 @@ lazy val core =
 
         try {
           val bytes = IO.readBytes(wasmFile)
+          val gzipOut = new ByteArrayOutputStream(math.max(1024, bytes.length / 3))
+          val gzip = new GZIPOutputStream(gzipOut)
+          try {
+            gzip.write(bytes)
+          } finally {
+            gzip.close()
+          }
+          val compressedBytes = gzipOut.toByteArray
           val encoder = Base64.getEncoder
 
           writer.write("package dev.bosatsu.scalawasiz3\n\n")
           writer.write("private[scalawasiz3] object EmbeddedWasmBytes {\n")
-          writer.write("  private val base64Chunks: Array[String] = Array(\n")
+          writer.write("  private val gzippedBase64Chunks: Array[String] = Array(\n")
 
           var first = true
-          val chunkIter = bytes.grouped(chunkSize)
+          val chunkIter = compressedBytes.grouped(chunkSize)
           while (chunkIter.hasNext) {
             val encoded = encoder.encodeToString(chunkIter.next())
             if (!first) {
@@ -112,73 +122,8 @@ lazy val core =
           writer.write("\n  )\n\n")
 
           writer.write(
-            """  private val decodeTable: Array[Int] = {
-              |    val table = Array.fill(256)(-1)
-              |    val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-              |    var i = 0
-              |    while (i < alphabet.length) {
-              |      table(alphabet.charAt(i).toInt) = i
-              |      i += 1
-              |    }
-              |    table('='.toInt) = 0
-              |    table
-              |  }
-              |
-              |  private def decodeChunk(chunk: String): Array[Byte] = {
-              |    val len = chunk.length
-              |    var padding = 0
-              |    if (len >= 1 && chunk.charAt(len - 1) == '=') padding += 1
-              |    if (len >= 2 && chunk.charAt(len - 2) == '=') padding += 1
-              |    val out = new Array[Byte](((len * 3) / 4) - padding)
-              |
-              |    var inPos = 0
-              |    var outPos = 0
-              |    while (inPos < len) {
-              |      val c0 = decodeTable(chunk.charAt(inPos).toInt)
-              |      val c1 = decodeTable(chunk.charAt(inPos + 1).toInt)
-              |      val c2 = decodeTable(chunk.charAt(inPos + 2).toInt)
-              |      val c3 = decodeTable(chunk.charAt(inPos + 3).toInt)
-              |      val bits = (c0 << 18) | (c1 << 12) | (c2 << 6) | c3
-              |
-              |      out(outPos) = ((bits >>> 16) & 0xff).toByte
-              |      outPos += 1
-              |      if (outPos < out.length) {
-              |        out(outPos) = ((bits >>> 8) & 0xff).toByte
-              |        outPos += 1
-              |      }
-              |      if (outPos < out.length) {
-              |        out(outPos) = (bits & 0xff).toByte
-              |        outPos += 1
-              |      }
-              |
-              |      inPos += 4
-              |    }
-              |
-              |    out
-              |  }
-              |
-              |  lazy val wasm: Array[Byte] = {
-              |    val decodedChunks = new Array[Array[Byte]](base64Chunks.length)
-              |    var total = 0
-              |    var idx = 0
-              |    while (idx < base64Chunks.length) {
-              |      val decoded = decodeChunk(base64Chunks(idx))
-              |      decodedChunks(idx) = decoded
-              |      total += decoded.length
-              |      idx += 1
-              |    }
-              |
-              |    val out = new Array[Byte](total)
-              |    var pos = 0
-              |    idx = 0
-              |    while (idx < decodedChunks.length) {
-              |      val chunk = decodedChunks(idx)
-              |      java.lang.System.arraycopy(chunk, 0, out, pos, chunk.length)
-              |      pos += chunk.length
-              |      idx += 1
-              |    }
-              |    out
-              |  }
+            """  lazy val wasm: Array[Byte] =
+              |    EmbeddedWasmSupport.decodeAndGunzip(gzippedBase64Chunks)
               |}
               |""".stripMargin
           )

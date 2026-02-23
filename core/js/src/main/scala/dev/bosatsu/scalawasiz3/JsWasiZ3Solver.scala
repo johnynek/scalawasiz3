@@ -10,57 +10,74 @@ import java.nio.charset.StandardCharsets
 
 private[scalawasiz3] object JsWasiZ3Solver extends Z3Solver {
   def runSmt2(input: String): Z3Result = {
-    val wasm = EmbeddedWasmBytes.wasm
-    if (wasm.isEmpty) {
-      Z3Result.Failure(
-        message =
-          "Embedded z3.wasm is empty for Scala.js. Run scripts/build-z3-wasi.sh before publishing or running.",
-        exitCode = None,
-        stdout = "",
-        stderr = ""
-      )
-    } else {
-      val wasi = new MiniWasi(normalizeInput(input))
-      try {
-        val webAssembly = js.Dynamic.global.selectDynamic("WebAssembly")
-        val moduleCtor = webAssembly.selectDynamic("Module")
-        val instanceCtor = webAssembly.selectDynamic("Instance")
+    val wasmOrError: Either[Throwable, Array[Byte]] =
+      try Right(EmbeddedWasmBytes.wasm)
+      catch {
+        case t: Throwable => Left(t)
+      }
 
-        val module = js.Dynamic.newInstance(moduleCtor)(toUint8Array(wasm))
-        val importObject = js.Dynamic.literal("wasi_snapshot_preview1" -> wasi.importObject)
-
-        val instance = js.Dynamic.newInstance(instanceCtor)(module, importObject)
-        wasi.bindInstance(instance)
-
-        val startFn = instance.exports.selectDynamic("_start")
-        if (js.isUndefined(startFn) || startFn == null) {
+    wasmOrError match {
+      case Left(t) =>
+        val msg = Option(t.getMessage).getOrElse(t.toString)
+        Z3Result.Failure(
+          message = s"Failed loading embedded z3.wasm for Scala.js: $msg",
+          exitCode = None,
+          stdout = "",
+          stderr = "",
+          cause = Some(t)
+        )
+      case Right(wasm) =>
+        if (wasm.isEmpty) {
           Z3Result.Failure(
-            message = "The embedded z3.wasm does not export _start; expected a WASI command module.",
+            message =
+              "Embedded z3.wasm is empty for Scala.js. Run scripts/build-z3-wasi.sh before publishing or running.",
             exitCode = None,
-            stdout = wasi.stdoutString,
-            stderr = wasi.stderrString
+            stdout = "",
+            stderr = ""
           )
         } else {
+          val wasi = new MiniWasi(normalizeInput(input))
           try {
-            startFn.asInstanceOf[js.Function0[Unit]].apply()
-            wasi.resultAfterRun()
+            val webAssembly = js.Dynamic.global.selectDynamic("WebAssembly")
+            val moduleCtor = webAssembly.selectDynamic("Module")
+            val instanceCtor = webAssembly.selectDynamic("Instance")
+
+            val module = js.Dynamic.newInstance(moduleCtor)(toUint8Array(wasm))
+            val importObject = js.Dynamic.literal("wasi_snapshot_preview1" -> wasi.importObject)
+
+            val instance = js.Dynamic.newInstance(instanceCtor)(module, importObject)
+            wasi.bindInstance(instance)
+
+            val startFn = instance.exports.selectDynamic("_start")
+            if (js.isUndefined(startFn) || startFn == null) {
+              Z3Result.Failure(
+                message = "The embedded z3.wasm does not export _start; expected a WASI command module.",
+                exitCode = None,
+                stdout = wasi.stdoutString,
+                stderr = wasi.stderrString
+              )
+            } else {
+              try {
+                startFn.asInstanceOf[js.Function0[Unit]].apply()
+                wasi.resultAfterRun()
+              } catch {
+                case jse: js.JavaScriptException =>
+                  wasi.resultFromException(jse)
+              }
+            }
           } catch {
             case jse: js.JavaScriptException =>
               wasi.resultFromException(jse)
+            case t: Throwable =>
+              Z3Result.Failure(
+                message = s"Failed executing z3.wasm on Scala.js: ${t.getMessage}",
+                exitCode = None,
+                stdout = wasi.stdoutString,
+                stderr = wasi.stderrString,
+                cause = Some(t)
+              )
           }
         }
-      } catch {
-        case jse: js.JavaScriptException =>
-          wasi.resultFromException(jse)
-        case t: Throwable =>
-          Z3Result.Failure(
-            message = s"Failed executing z3.wasm on Scala.js: ${t.getMessage}",
-            exitCode = None,
-            stdout = wasi.stdoutString,
-            stderr = wasi.stderrString,
-            cause = Some(t)
-          )
-      }
     }
   }
 
