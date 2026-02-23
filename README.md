@@ -6,7 +6,7 @@ A Scala 3.8.1 cross-platform library that embeds a WASI build of Z3 and exposes 
 
 - Single published Scala library (`dev.bosatsu.scalawasiz3`) for JVM and Scala.js.
 - Publish Maven coordinates under `dev.bosatsu:scalawasiz3` (with platform/cross suffixes where applicable).
-- Z3 distributed as an embedded `z3.wasm` resource in published artifacts.
+- Z3 built from source in CI/release and distributed as an embedded `z3.wasm` resource in published artifacts.
 - JVM execution via [Chicory](https://github.com/dylibso/chicory).
 - Scala.js execution via an internal WASI Preview1 host (Node and browser-oriented runtime path).
 
@@ -44,7 +44,7 @@ Expected local tools:
 - `python3`
 - `file`
 
-After build, these files are updated:
+After build, these generated (gitignored) files are updated:
 
 - `core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm`
 - `core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm.sha256`
@@ -73,14 +73,15 @@ val result = solver.runSmt2("(check-sat)")
 ## CI and release
 
 - `CI`: `.github/workflows/ci.yml`
-  - builds `z3.wasm`
+  - builds `z3.wasm` from source
   - validates JS WASI import coverage
   - runs JVM and JS tests
 - `Release`: `.github/workflows/release.yml`
-  - rebuilds wasm
+  - validates tag/version
+  - builds `z3.wasm` from source
   - validates coverage
   - runs `sbt ci-release`
-  - uploads `z3.wasm` and built jars to the GitHub release page on tag pushes
+  - uploads generated `z3.wasm` and built jars to the GitHub release page on tag pushes
 
 Required GitHub secrets for release:
 
@@ -95,8 +96,8 @@ Required GitHub secrets for release:
 2. Run `./scripts/build-z3-wasi.sh`.
 3. Run `./scripts/check-js-wasi-coverage.js core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm`.
 4. Run `sbt 'coreJVM/test' 'coreJS/test'`.
-5. Commit updated wasm resource + metadata.
+5. Tag/release once CI passes; no Z3 binary artifacts are checked in.
 
 ## Current caveat
 
-Repository bootstrap currently includes a tiny placeholder wasm module so the project compiles before first real Z3 build. Run `./scripts/build-z3-wasi.sh` to replace it with the actual Z3 artifact.
+Generated Z3 resources are required for compilation. If `sbt` reports missing `z3.wasm` or `z3.wasm.sha256`, run `./scripts/build-z3-wasi.sh` and rerun the build.

@@ -11,3 +11,8 @@ core/**/target/
 *.tmp
 
 node_modules/
+
+# Generated Z3 WASI artifacts
+core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm
+core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm.sha256
+core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.imports.json
