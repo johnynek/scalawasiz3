@@ -48,7 +48,7 @@ jobs:
 
           version="$(
             sbt -batch -Dsbt.log.noformat=true --error 'print version' \
-              | awk 'NF { line = $0 } END { sub(/^\[info\][[:space:]]*/, "", line); print line }'
+              | awk 'NF { line = $0 } END { sub(/^\[info\][[:space:]]*/, "", line); gsub(/^[[:space:]]+|[[:space:]]+$/, "", line); print line }'
           )"
           if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "error: expected sbt version to match MAJOR.MINOR.PATCH, got: $version" >&2
