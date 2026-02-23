@@ -1,6 +1,7 @@
 .bsp/
 .idea/
 .metals/
+.sbt-local/
 .vscode/
 project/project/
 project/target/
