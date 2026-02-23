@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '17'
           cache: sbt
 
       - uses: actions/setup-node@v6
@@ -40,6 +40,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build python3 file
+
+      - name: Ensure shasum is installed (Linux release node only)
+        if: runner.os == 'Linux' && startsWith(github.ref, 'refs/tags/')
+        run: |
+          if ! command -v shasum >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y perl
+          fi
+          shasum --version
 
       - name: Build Z3 WASI artifact
         run: ./scripts/build-z3-wasi.sh
@@ -59,6 +68,18 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         run: sbt -J-Xms1G -J-Xmx4G -J-XX:+UseG1GC 'coreJVM/package' 'coreJS/package'
 
+      - name: Generate SHA256SUMS for release assets (Linux only)
+        if: runner.os == 'Linux' && startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          mkdir -p target/release-assets
+          shasum -a 256 \
+            core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm \
+            core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm.sha256 \
+            core/jvm/target/scala-3.8.1/scalawasiz3*.jar \
+            core/js/target/scala-3.8.1/scalawasiz3*.jar \
+            > target/release-assets/SHA256SUMS
+
       - name: Upload GitHub release assets
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
@@ -68,3 +89,4 @@ jobs:
             core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm.sha256
             core/jvm/target/scala-3.8.1/scalawasiz3*.jar
             core/js/target/scala-3.8.1/scalawasiz3*.jar
+            target/release-assets/SHA256SUMS
