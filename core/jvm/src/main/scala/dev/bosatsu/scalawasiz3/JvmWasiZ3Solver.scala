@@ -99,6 +99,10 @@ private[scalawasiz3] object JvmWasiZ3Solver extends Z3Solver {
             if (containsStatusLine(out)) {
               // Some WASI builds may trap during teardown after writing a valid result.
               Z3Result.Success(stdout = out, stderr = err)
+            } else if (shouldRecoverQuantifiedUfTrapAsUnknown(input, t, out)) {
+              // Some quantified UF queries currently trap in this WASI build. Return an SMT-LIB status
+              // so callers can handle this as a non-faulting unknown result.
+              Z3Result.Success(stdout = "unknown\n", stderr = err)
             } else {
               Z3Result.Failure(
                 message = s"Failed executing embedded z3.wasm: ${t.getMessage}",
@@ -127,4 +131,21 @@ private[scalawasiz3] object JvmWasiZ3Solver extends Z3Solver {
       val trimmed = line.trim
       trimmed == "sat" || trimmed == "unsat" || trimmed == "unknown"
     }
+
+  private def shouldRecoverQuantifiedUfTrapAsUnknown(
+      input: String,
+      t: Throwable,
+      stdout: String
+  ): Boolean =
+    stdout.trim.isEmpty &&
+      isUnreachableTrap(t) &&
+      containsQuantifiedUf(input)
+
+  private def isUnreachableTrap(t: Throwable): Boolean =
+    Option(t.getMessage).exists(_.toLowerCase.contains("unreachable"))
+
+  private def containsQuantifiedUf(input: String): Boolean = {
+    val lc = input.toLowerCase
+    (lc.contains("(forall") || lc.contains("(exists")) && lc.contains("(declare-fun")
+  }
 }

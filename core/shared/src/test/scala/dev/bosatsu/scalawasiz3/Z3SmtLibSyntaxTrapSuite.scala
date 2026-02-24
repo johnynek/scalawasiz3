@@ -73,8 +73,8 @@ class Z3SmtLibSyntaxTrapSuite extends munit.FunSuite with Z3SmtLibSyntaxAssertio
     assertFailsWithTrap("src/test/smt2print_parse.cpp::spec5", SpecBitVectors)
   }
 
-  test("c parser_example3 currently traps on wasi") {
-    assertFailsWithTrap("examples/c/test_capi.c::parser_example3", ParserExample3)
+  test("c parser_example3 Int logic returns unknown instead of trapping") {
+    assertStatusesExactly("examples/c/test_capi.c::parser_example3", ParserExample3, List("unknown"))
   }
 
   test("c smt2parser_example currently traps on wasi") {

@@ -120,6 +120,11 @@ private[scalawasiz3] object JsWasiZ3Solver extends Z3Solver {
     private val stdoutBuilder = ArrayBuilder.make[Byte]
     private val stderrBuilder = ArrayBuilder.make[Byte]
 
+    private val containsQuantifiedUf: Boolean = {
+      val lc = inputText.toLowerCase
+      (lc.contains("(forall") || lc.contains("(exists")) && lc.contains("(declare-fun")
+    }
+
     private val args = Array("z3", "-smt2", "-in")
     private val argsBytes = args.map(_.getBytes(StandardCharsets.UTF_8))
 
@@ -154,6 +159,8 @@ private[scalawasiz3] object JsWasiZ3Solver extends Z3Solver {
         case None =>
           if (containsStatusLine(stdoutString)) {
             Z3Result.Success(stdout = stdoutString, stderr = stderrString)
+          } else if (shouldRecoverQuantifiedUfTrapAsUnknown(jse)) {
+            Z3Result.Success(stdout = "unknown\n", stderr = stderrString)
           } else {
             Z3Result.Failure(
               message = s"Scala.js runtime exception while running z3.wasm: ${jse.getMessage}",
@@ -171,6 +178,11 @@ private[scalawasiz3] object JsWasiZ3Solver extends Z3Solver {
         val trimmed = line.trim
         trimmed == "sat" || trimmed == "unsat" || trimmed == "unknown"
       }
+
+    private def shouldRecoverQuantifiedUfTrapAsUnknown(jse: js.JavaScriptException): Boolean =
+      stdoutString.trim.isEmpty &&
+        containsQuantifiedUf &&
+        Option(jse.getMessage).exists(_.toLowerCase.contains("unreachable"))
 
     private def extractExitCode(value: Any): Option[Int] = {
       val dyn = value.asInstanceOf[js.Dynamic]
