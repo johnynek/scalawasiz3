@@ -57,27 +57,27 @@ class Z3SmtLibSyntaxTrapSuite extends munit.FunSuite with Z3SmtLibSyntaxAssertio
       |(check-sat)
       |""".stripMargin
 
-  test("smt2print_parse spec1 currently traps on wasi") {
-    assertFailsWithTrap("src/test/smt2print_parse.cpp::spec1", SpecDatatypeDeclarations)
+  test("smt2print_parse spec1 executes without trap") {
+    assertSucceedsWithoutStatuses("src/test/smt2print_parse.cpp::spec1", SpecDatatypeDeclarations)
   }
 
-  test("smt2print_parse spec2 currently traps on wasi") {
-    assertFailsWithTrap("src/test/smt2print_parse.cpp::spec2", SpecArrayDeclarations)
+  test("smt2print_parse spec2 executes without trap") {
+    assertSucceedsWithoutStatuses("src/test/smt2print_parse.cpp::spec2", SpecArrayDeclarations)
   }
 
-  test("smt2print_parse spec3 currently traps on wasi") {
-    assertFailsWithTrap("src/test/smt2print_parse.cpp::spec3", SpecMutuallyRecursiveDatatypes)
+  test("smt2print_parse spec3 executes without trap") {
+    assertSucceedsWithoutStatuses("src/test/smt2print_parse.cpp::spec3", SpecMutuallyRecursiveDatatypes)
   }
 
-  test("smt2print_parse spec5 currently traps on wasi") {
-    assertFailsWithTrap("src/test/smt2print_parse.cpp::spec5", SpecBitVectors)
+  test("smt2print_parse spec5 returns sat without trap") {
+    assertStatusesExactly("src/test/smt2print_parse.cpp::spec5", SpecBitVectors, List("sat"))
   }
 
-  test("c parser_example3 currently traps on wasi") {
-    assertFailsWithTrap("examples/c/test_capi.c::parser_example3", ParserExample3)
+  test("c parser_example3 returns sat without trap") {
+    assertStatusesExactly("examples/c/test_capi.c::parser_example3", ParserExample3, List("sat"))
   }
 
-  test("c smt2parser_example currently traps on wasi") {
-    assertFailsWithTrap("examples/c/test_capi.c::smt2parser_example", Smt2ParserExample)
+  test("c smt2parser_example returns sat without trap") {
+    assertStatusesExactly("examples/c/test_capi.c::smt2parser_example", Smt2ParserExample, List("sat"))
   }
 }

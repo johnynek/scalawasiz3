@@ -1,0 +1,277 @@
+--- a/src/cmd_context/basic_cmds.cpp
++++ b/src/cmd_context/basic_cmds.cpp
+@@ -95,7 +95,7 @@
+     }
+ };
+ 
+-ATOMIC_CMD(exit_cmd, "exit", "exit.", ctx.print_success(); throw stop_parser_exception(););
++ATOMIC_CMD(exit_cmd, "exit", "exit.", ctx.print_success(););
+ 
+ class get_model_cmd : public cmd {
+     unsigned m_index;
+--- a/src/tactic/fpa/qffp_tactic.cpp
++++ b/src/tactic/fpa/qffp_tactic.cpp
+@@ -32,43 +32,54 @@
+ 
+ 
+ struct is_non_fp_qfnra_predicate {
+-    struct found : public std::exception {};
+     ast_manager & m;
+     bv_util       bu;
+     fpa_util      fu;
+     arith_util    au;
++    bool          m_found;
+ 
+-    is_non_fp_qfnra_predicate(ast_manager & _m) : m(_m), bu(m), fu(m), au(m) {}
++    is_non_fp_qfnra_predicate(ast_manager & _m) : m(_m), bu(m), fu(m), au(m), m_found(false) {}
+ 
+-    void operator()(var *) { throw found(); }
+-    void operator()(quantifier *) { throw found(); }
++    void mark_found() { m_found = true; }
+ 
++    void operator()(var *) { mark_found(); }
++    void operator()(quantifier *) { mark_found(); }
++
+     void operator()(app * n) {
++        if (m_found)
++            return;
+         family_id fid = n->get_family_id();
+         if (fid != null_family_id && fid != fu.get_family_id())
+-            throw found();
++            mark_found();
+ 
+         sort * s = n->get_sort();
+         if (fid == fu.get_family_id()) {
+             if (!fu.is_float(s) && !fu.is_rm(s) &&
+                 to_app(n)->get_decl_kind() != OP_FPA_TO_REAL)
+-                throw found();
++                mark_found();
+         }
+         else if (fid == null_family_id) {
+             if (!fu.is_float(s) && !fu.is_rm(s) && !m.is_bool(s))
+-                throw found();
++                mark_found();
+         }
+         else if (fid == m.get_basic_family_id())
+             return;
+         else
+-            throw found();
++            mark_found();
+     }
+ };
+ 
++template<typename Predicate>
++static bool test_without_exceptions(goal const & g, Predicate & p) {
++    for_each_expr_at(p, g);
++    return p.m_found;
++}
++
+ class is_fp_qfnra_probe : public probe {
+ public:
+     result operator()(goal const & g) override {
+-        return !test<is_non_fp_qfnra_predicate>(g);
++        is_non_fp_qfnra_predicate p(g.m());
++        return !test_without_exceptions(g, p);
+     }
+ };
+ 
+@@ -109,22 +120,26 @@
+ }
+ 
+ struct is_non_qffp_predicate {
+-    struct found {};
+     ast_manager & m;
+     bv_util       bu;
+     fpa_util      fu;
+     arith_util    au;
++    bool          m_found;
+ 
+-    is_non_qffp_predicate(ast_manager & _m) : m(_m), bu(m), fu(m), au(m) {}
++    is_non_qffp_predicate(ast_manager & _m) : m(_m), bu(m), fu(m), au(m), m_found(false) {}
+ 
+-    void operator()(var *) { throw found(); }
++    void mark_found() { m_found = true; }
+ 
+-    void operator()(quantifier *) { throw found(); }
++    void operator()(var *) { mark_found(); }
+ 
++    void operator()(quantifier *) { mark_found(); }
++
+     void operator()(app * n) {
++        if (m_found)
++            return;
+         sort * s = n->get_sort();
+         if (!m.is_bool(s) && !fu.is_float(s) && !fu.is_rm(s) && !bu.is_bv_sort(s) && !au.is_real(s))
+-            throw found();
++            mark_found();
+         family_id fid = n->get_family_id();
+         if (fid == m.get_basic_family_id())
+             return;
+@@ -135,14 +150,15 @@
+         if (au.is_real(s) && au.is_numeral(n))
+             return;
+ 
+-        throw found();
++        mark_found();
+     }
+ };
+ 
+ class is_qffp_probe : public probe {
+ public:
+     result operator()(goal const & g) override {
+-        return !test<is_non_qffp_predicate>(g);
++        is_non_qffp_predicate p(g.m());
++        return !test_without_exceptions(g, p);
+     }
+ };
+ 
+--- a/src/tactic/bv/bv1_blaster_tactic.cpp
++++ b/src/tactic/bv/bv1_blaster_tactic.cpp
+@@ -338,13 +338,15 @@
+             m_rw(m, p) {
+         }
+ 
+-        struct not_target : public std::exception {};
+-        
+         struct visitor {
+             family_id m_bv_fid;
+-            visitor(family_id bv_fid):m_bv_fid(bv_fid) {}
+-            void operator()(var const * n) { throw not_target(); }
++            bool      m_not_target;
++            visitor(family_id bv_fid):m_bv_fid(bv_fid), m_not_target(false) {}
++            void mark_not_target() { m_not_target = true; }
++            void operator()(var const * n) { mark_not_target(); }
+             void operator()(app const * n) { 
++                if (m_not_target)
++                    return;
+                 if (n->get_family_id() == m_bv_fid) {
+                     switch (n->get_decl_kind()) {
+                     case OP_BV_NUM:
+@@ -353,29 +355,28 @@
+                         return;
+                     case OP_BXOR:
+                         // it doesn't payoff to do the reduction in this case.
+-                        throw not_target();
++                        mark_not_target();
++                        return;
+                     default:
+-                        throw not_target();
++                        mark_not_target();
++                        return;
+                     }
+                 }
+             }
+-            void operator()(quantifier const * n) { throw not_target(); }
++            void operator()(quantifier const * n) { mark_not_target(); }
+         };
+         
+         bool is_target(goal const & g) const {
+             expr_fast_mark1 visited;
+             unsigned sz = g.size();
+             visitor proc(m_rw.cfg().butil().get_family_id());
+-            try {
+-                for (unsigned i = 0; i < sz; ++i) {
+-                    expr * f = g.form(i);
+-                    for_each_expr_core<visitor, expr_fast_mark1, false, true>(proc, visited, f);
+-                }
++            for (unsigned i = 0; i < sz; ++i) {
++                expr * f = g.form(i);
++                for_each_expr_core<visitor, expr_fast_mark1, false, true>(proc, visited, f);
++                if (proc.m_not_target)
++                    return false;
+             }
+-            catch (const not_target &) {
+-                return false;
+-            }
+-            return true;
++            return !proc.m_not_target;
+         }
+         
+         ast_manager & m() const { return m_rw.m(); }
+--- a/src/ast/occurs.cpp
++++ b/src/ast/occurs.cpp
+@@ -28,14 +28,13 @@
+ // -----------------------------------
+ 
+ namespace {
+-    struct found {}; 
+-    
+     struct proc_z3 {
+         expr * m_n;
++        bool   m_found;
+ 
+-#define CHECK() { if (n == m_n) throw found(); }
++#define CHECK() { if (n == m_n) m_found = true; }
+ 
+-        proc_z3(expr * n):m_n(n) {}
++        proc_z3(expr * n):m_n(n), m_found(false) {}
+         void operator()(var const * n) { CHECK(); }
+         void operator()(app const * n) { CHECK(); }
+         void operator()(quantifier const * n) { CHECK(); }
+@@ -43,18 +42,20 @@
+ 
+     struct decl_proc {
+         func_decl * m_d;
++        bool        m_found;
+ 
+-        decl_proc(func_decl * d):m_d(d) {}
++        decl_proc(func_decl * d):m_d(d), m_found(false) {}
+         void operator()(var const * n) { }
+-        void operator()(app const * n) { if (n->get_decl() == m_d) throw found(); }
++        void operator()(app const * n) { if (n->get_decl() == m_d) m_found = true; }
+         void operator()(quantifier const * n) { }
+     };
+ 
+ 
+     struct sort_proc {
+         sort* m_s;
+-        sort_proc(sort* s) :m_s(s) {}
+-        void operator()(sort const* s2) { if (m_s == s2) throw found(); }
++        bool  m_found;
++        sort_proc(sort* s) :m_s(s), m_found(false) {}
++        void operator()(sort const* s2) { if (m_s == s2) m_found = true; }
+         void operator()(ast*) {}
+     };
+ 
+@@ -64,35 +65,20 @@
+ // Return true if n1 occurs in n2
+ bool occurs(expr * n1, expr * n2) {
+     proc_z3 p(n1);
+-    try {
+-        quick_for_each_expr(p, n2);
+-    }
+-    catch (const found &) {
+-        return true;
+-    }
+-    return false;
++    quick_for_each_expr(p, n2);
++    return p.m_found;
+ }
+ 
+ bool occurs(func_decl * d, expr * n) {
+     decl_proc p(d);
+-    try {
+-        quick_for_each_expr(p, n);
+-    }
+-    catch (const found &) {
+-        return true;
+-    }
+-    return false;
++    quick_for_each_expr(p, n);
++    return p.m_found;
+ }
+ 
+ bool occurs(sort* s1, sort* s2) {
+     sort_proc p(s1);
+-    try {
+-        for_each_ast(p, s2, true);
+-    }
+-    catch (const found&) {
+-        return true;
+-    }
+-    return false;
++    for_each_ast(p, s2, true);
++    return p.m_found;
+ }
+ 
+ void mark_occurs(ptr_vector<expr>& to_check, expr* v, expr_mark& occ) {
