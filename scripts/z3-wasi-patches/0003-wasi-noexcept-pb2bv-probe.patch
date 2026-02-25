@@ -1,0 +1,164 @@
+--- a/src/tactic/arith/pb2bv_tactic.cpp
++++ b/src/tactic/arith/pb2bv_tactic.cpp
+@@ -42,30 +42,44 @@
+         ast_manager   & m;
+         arith_util    & m_util;
+         pb_util       & m_pb;
+-        bound_manager & m_bm;        
++        bound_manager & m_bm;
++        expr *          m_non_pb;
+     
+         only_01_visitor(arith_util & u, pb_util& pb, bound_manager & bm):
+             m(u.get_manager()),
+             m_util(u),
+             m_pb(pb),
+-            m_bm(bm) {
++            m_bm(bm),
++            m_non_pb(nullptr) {
+         }
+     
+-        void throw_non_pb(expr * n) {
+-            TRACE(pb2bv, tout << "Not pseudo-Boolean: " << mk_ismt2_pp(n, m) << "\n";);
+-            throw non_pb(n);
++        void mark_non_pb(expr * n) {
++            if (m_non_pb == nullptr) {
++                TRACE(pb2bv, tout << "Not pseudo-Boolean: " << mk_ismt2_pp(n, m) << "\n";);
++                m_non_pb = n;
++            }
+         }
++
++        bool has_non_pb() const {
++            return m_non_pb != nullptr;
++        }
++
++        expr * non_pb_expr() const {
++            return m_non_pb;
++        }
+     
+         void operator()(var * n) { 
+-            throw_non_pb(n);
++            mark_non_pb(n);
+         }
+     
+         void operator()(app * n) {            
++            if (has_non_pb())
++                return;
+             family_id fid = n->get_family_id();
+             if (fid == m.get_basic_family_id()) {
+                 // all basic family ops (but term-ite and distinct) are OK
+                 if (m.is_term_ite(n) || m.is_distinct(n))
+-                    throw_non_pb(n);
++                    mark_non_pb(n);
+                 return;
+             }
+         
+@@ -77,12 +91,12 @@
+                     return;
+                 case OP_MUL:
+                     if (n->get_num_args() != 2)
+-                        throw_non_pb(n);
++                        mark_non_pb(n);
+                     if (!m_util.is_numeral(n->get_arg(0)))
+-                        throw_non_pb(n);
++                        mark_non_pb(n);
+                     return;
+                 default:
+-                    throw_non_pb(n);
++                    mark_non_pb(n);
+                 }
+             }
+ 
+@@ -102,11 +116,11 @@
+                 }
+             }
+         
+-            throw_non_pb(n);
++            mark_non_pb(n);
+         }
+     
+         void operator()(quantifier * n) { 
+-            throw_non_pb(n);
++            mark_non_pb(n);
+         }
+     };
+ private:
+@@ -195,14 +209,18 @@
+                 throw tactic_exception(TACTIC_MAX_MEMORY_MSG);
+         }
+ 
+-        void quick_pb_check(goal_ref const & g) {
++        expr * quick_pb_check(goal_ref const & g) {
+             expr_fast_mark1 visited;
+             only_01_visitor proc(m_arith_util, m_pb, m_bm);
+             unsigned sz = g->size();
+             for (unsigned i = 0; i < sz; ++i) {
+                 expr * f = g->form(i);
+                 for_each_expr_core<only_01_visitor, expr_fast_mark1, true, true>(proc, visited, f);
++                if (proc.has_non_pb())
++                    return proc.non_pb_expr();
+             }
++
++            return nullptr;
+         }
+ 
+         struct rw_cfg : public default_rewriter_cfg {
+@@ -919,12 +937,8 @@
+             
+             TRACE(pb2bv, m_bm.display(tout););
+ 
+-            try {
+-                quick_pb_check(g);
+-            }
+-            catch (non_pb& p) {
+-                throw_tactic(p.e);
+-            }
++            if (expr * e = quick_pb_check(g))
++                throw_tactic(e);
+                         
+             expr_ref_vector new_exprs(m);
+             expr_dependency_ref_vector new_deps(m);
+@@ -1040,27 +1054,24 @@
+ 
+ struct is_pb_probe : public probe {
+     result operator()(goal const & g) override {
+-        try {
+-            ast_manager & m = g.m();
+-            bound_manager bm(m);
+-            for (unsigned i = 0; i < g.size(); ++i) 
+-                bm(g.form(i), g.dep(i), g.pr(i));
+-            arith_util a_util(m);
+-            pb_util pb(m);
+-            expr_fast_mark1 visited;
+-            pb2bv_tactic::only_01_visitor proc(a_util, pb, bm);
+-            
+-            unsigned sz = g.size();
+-            for (unsigned i = 0; i < sz; ++i) {
+-                expr * f = g.form(i);
+-                for_each_expr_core<pb2bv_tactic::only_01_visitor, expr_fast_mark1, true, true>(proc, visited, f);
+-            }
+-            
+-            return true;
++        ast_manager & m = g.m();
++        bound_manager bm(m);
++        for (unsigned i = 0; i < g.size(); ++i)
++            bm(g.form(i), g.dep(i), g.pr(i));
++        arith_util a_util(m);
++        pb_util pb(m);
++        expr_fast_mark1 visited;
++        pb2bv_tactic::only_01_visitor proc(a_util, pb, bm);
++
++        unsigned sz = g.size();
++        for (unsigned i = 0; i < sz; ++i) {
++            expr * f = g.form(i);
++            for_each_expr_core<pb2bv_tactic::only_01_visitor, expr_fast_mark1, true, true>(proc, visited, f);
++            if (proc.has_non_pb())
++                return false;
+         }
+-        catch (const pb2bv_tactic::non_pb &) {
+-            return false;
+-        }
++
++        return !proc.has_non_pb();
+     }
+ };
+ 
