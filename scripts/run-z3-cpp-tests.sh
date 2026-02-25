@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSIONS_FILE="$ROOT_DIR/versions.properties"
-PATCH_FILE="$ROOT_DIR/scripts/z3-wasi-patches/0001-wasi-noexcept-probe-failif.patch"
+PATCH_DIR="$ROOT_DIR/scripts/z3-wasi-patches"
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -32,10 +32,20 @@ require_cmd patch
 require_cmd grep
 require_cmd awk
 
-if [[ ! -f "$PATCH_FILE" ]]; then
-  echo "error: missing patch file at $PATCH_FILE" >&2
+if [[ ! -d "$PATCH_DIR" ]]; then
+  echo "error: missing patch directory at $PATCH_DIR" >&2
   exit 1
 fi
+
+shopt -s nullglob
+PATCH_FILES=("$PATCH_DIR"/*.patch)
+shopt -u nullglob
+if [[ "${#PATCH_FILES[@]}" -eq 0 ]]; then
+  echo "error: no patch files found in $PATCH_DIR" >&2
+  exit 1
+fi
+IFS=$'\n' PATCH_FILES=($(printf '%s\n' "${PATCH_FILES[@]}" | sort))
+unset IFS
 
 Z3_TAG="${Z3_TAG:-$(prop z3.tag)}"
 CACHE_DIR="${CACHE_DIR:-$ROOT_DIR/target/z3-wasi-cache}"
@@ -57,10 +67,12 @@ rm -rf "$SRC_DIR" "$BUILD_DIR"
 mkdir -p "$SRC_DIR" "$BUILD_DIR"
 tar -xzf "$Z3_ARCHIVE" -C "$SRC_DIR" --strip-components=1
 
-if ! patch -d "$SRC_DIR" -p1 < "$PATCH_FILE"; then
-  echo "error: failed to apply $PATCH_FILE to $SRC_DIR" >&2
-  exit 1
-fi
+for PATCH_FILE in "${PATCH_FILES[@]}"; do
+  if ! patch -d "$SRC_DIR" -p1 < "$PATCH_FILE"; then
+    echo "error: failed to apply $PATCH_FILE to $SRC_DIR" >&2
+    exit 1
+  fi
+done
 
 CMAKE_FLAGS=(
   -G Ninja

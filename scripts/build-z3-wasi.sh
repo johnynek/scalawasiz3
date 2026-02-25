@@ -16,7 +16,8 @@ apply_z3_wasi_patches() {
   local hwf_file="$src_dir/src/util/hwf.cpp"
   local util_cmake_file="$src_dir/src/util/CMakeLists.txt"
   local noexcept_stub_file="$src_dir/src/util/wasi_noexcept_stubs.cpp"
-  local probe_patch_file="$ROOT_DIR/scripts/z3-wasi-patches/0001-wasi-noexcept-probe-failif.patch"
+  local patch_dir="$ROOT_DIR/scripts/z3-wasi-patches"
+  local patch_file
 
   if [[ ! -f "$hwf_file" ]]; then
     echo "error: expected Z3 source file at $hwf_file" >&2
@@ -79,17 +80,27 @@ EOF
     exit 1
   fi
 
-  if [[ ! -f "$probe_patch_file" ]]; then
-    echo "error: expected Z3 WASI patch file at $probe_patch_file" >&2
+  if [[ ! -d "$patch_dir" ]]; then
+    echo "error: expected Z3 WASI patch directory at $patch_dir" >&2
     exit 1
   fi
 
-  if ! grep -q "test_without_exceptions" "$src_dir/src/tactic/probe.cpp"; then
-    if ! patch -d "$src_dir" -p1 < "$probe_patch_file"; then
-      echo "error: failed to apply Z3 WASI probe patch $probe_patch_file" >&2
+  shopt -s nullglob
+  local patch_files=("$patch_dir"/*.patch)
+  shopt -u nullglob
+  if [[ "${#patch_files[@]}" -eq 0 ]]; then
+    echo "error: no Z3 WASI patch files found in $patch_dir" >&2
+    exit 1
+  fi
+  IFS=$'\n' patch_files=($(printf '%s\n' "${patch_files[@]}" | sort))
+  unset IFS
+
+  for patch_file in "${patch_files[@]}"; do
+    if ! patch -d "$src_dir" -p1 < "$patch_file"; then
+      echo "error: failed to apply Z3 WASI patch $patch_file" >&2
       exit 1
     fi
-  fi
+  done
 }
 
 prop() {
