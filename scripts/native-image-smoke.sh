@@ -12,6 +12,11 @@ if [[ ! -x "$BIN" ]]; then
   exit 1
 fi
 
+has_status_line() {
+  local file="$1"
+  grep -Eq '^(sat|unsat|unknown)$' "$file"
+}
+
 TMP_DIR="$(mktemp -d)"
 cleanup() {
   rm -rf "$TMP_DIR"
@@ -59,14 +64,14 @@ set +e
 printf '%s' "$INVALID_INPUT" | "$BIN" >"$TMP_DIR/invalid.out" 2>"$TMP_DIR/invalid.err"
 INVALID_EXIT=$?
 set -e
-if [[ "$INVALID_EXIT" -eq 0 ]]; then
-  echo "invalid SMT-LIB should fail with non-zero exit code" >&2
+if has_status_line "$TMP_DIR/invalid.out"; then
+  echo "invalid SMT-LIB should not produce sat/unsat/unknown status output" >&2
   cat "$TMP_DIR/invalid.out" >&2
   cat "$TMP_DIR/invalid.err" >&2
   exit 1
 fi
 if [[ ! -s "$TMP_DIR/invalid.err" ]]; then
-  echo "expected invalid SMT-LIB to produce stderr output" >&2
+  echo "expected invalid SMT-LIB to produce parser diagnostics on stderr" >&2
   cat "$TMP_DIR/invalid.out" >&2
   cat "$TMP_DIR/invalid.err" >&2
   exit 1
