@@ -86,11 +86,45 @@ Modes:
 - `shared`: all benchmark threads share `Z3Solver.default`
 - `isolated`: each thread uses its own `Z3Solver.create()`
 
-Optional runtime-compiler disk cache (Chicory):
+### Chicory runtime-compiler directory cache
+
+Set the JVM system property `scalawasiz3.chicory.runtimeCompilerCacheDir` to enable Chicory's on-disk cache:
 
 ```bash
-sbt -Dscalawasiz3.chicory.runtimeCompilerCacheDir=/tmp/chicory-cache "project coreJVM" "runMain dev.bosatsu.scalawasiz3.JvmSolverBenchmarkMain --warmup 20 --iterations 200 --threads 4 --mode shared"
+mkdir -p /tmp/scalawasiz3-chicory-cache
+sbt -Dscalawasiz3.chicory.runtimeCompilerCacheDir=/tmp/scalawasiz3-chicory-cache "project coreJVM" "runMain dev.bosatsu.scalawasiz3.JvmSolverBenchmarkMain --warmup 20 --iterations 200 --threads 4 --mode shared"
 ```
+
+- If the property is unset, runtime-compiled bytecode is reused in-memory for the current process only.
+- If the property is set, runtime-compiled bytecode is also persisted to disk and can be reused across process restarts.
+- In this benchmark harness, steady-state throughput is usually similar either way; the cache is mainly useful for startup compile reuse.
+
+## Recent benchmark runs (M3 MacBook Air)
+
+These point-in-time runs (March 2026) used:
+
+```bash
+sbt "project coreJVM" "runMain dev.bosatsu.scalawasiz3.JvmSolverBenchmarkMain --warmup 20 --iterations 200 --threads N --mode shared"
+```
+
+Before runtime compiler path (pre-PR #20):
+
+- 1 thread: `2.51 calls/s` (200 calls in `79.794s`)
+- 4 threads: `4.50 calls/s` (200 calls in `44.478s`)
+
+After runtime compiler path (no cache dir):
+
+- 1 thread: `50.68 calls/s` (200 calls in `3.946s`)
+- 4 threads: `125.56 calls/s` (200 calls in `1.593s`)
+
+After runtime compiler path (cache dir set):
+
+- 1 thread (first cached run): `47.43 calls/s` (200 calls in `4.217s`)
+- 1 thread (warm cached run): `50.29 calls/s` (200 calls in `3.977s`)
+- 4 threads (first cached run): `135.35 calls/s` (200 calls in `1.478s`)
+- 4 threads (warm cached run): `115.56 calls/s` (200 calls in `1.731s`)
+
+Expect run-to-run variance; cache-dir benefit is primarily across fresh JVM process starts.
 
 ## CI and release
 
