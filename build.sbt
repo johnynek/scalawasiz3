@@ -7,7 +7,7 @@ import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 
-val chicoryVersion = "1.4.0"
+val chicoryVersion = "1.7.2"
 val munitVersion = "1.1.1"
 val munitScalacheckVersion = "1.1.0"
 val lz4JavaVersion = "1.8.0"
@@ -76,6 +76,8 @@ lazy val core =
     .jvmSettings(
       libraryDependencies ++= Seq(
         "com.dylibso.chicory" % "runtime" % chicoryVersion,
+        "com.dylibso.chicory" % "compiler" % chicoryVersion,
+        "com.dylibso.chicory" % "dircache-experimental" % chicoryVersion,
         "com.dylibso.chicory" % "wasm" % chicoryVersion,
         "com.dylibso.chicory" % "wasi" % chicoryVersion,
         "org.lz4" % "lz4-java" % lz4JavaVersion % Test,

@@ -16,4 +16,13 @@ class Z3SolverSmokeSuite extends munit.FunSuite {
     assert(one != null)
     assert(two != null)
   }
+
+  test("create returns a reusable solver instance") {
+    val solver = Z3Solver.create()
+    val one = solver.runSmt2("(check-sat)")
+    val two = solver.runSmt2("(check-sat)")
+
+    assert(one != null)
+    assert(two != null)
+  }
 }

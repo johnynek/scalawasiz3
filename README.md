@@ -63,12 +63,34 @@ import dev.bosatsu.scalawasiz3.Z3Solver
 
 val solver = Z3Solver.default
 val result = solver.runSmt2("(check-sat)")
+
+// Optional: create an isolated reusable solver handle (useful per worker/thread)
+val threadLocalSolver = Z3Solver.create()
 ```
 
 `runSmt2` returns `Z3Result`, with:
 
 - `Z3Result.Success(stdout, stderr, exitCode = 0)`
 - `Z3Result.Failure(message, exitCode, stdout, stderr, cause)`
+
+## JVM benchmark
+
+Run the JVM benchmark harness:
+
+```bash
+sbt "project coreJVM" "runMain dev.bosatsu.scalawasiz3.JvmSolverBenchmarkMain --warmup 20 --iterations 200 --threads 4 --mode shared"
+```
+
+Modes:
+
+- `shared`: all benchmark threads share `Z3Solver.default`
+- `isolated`: each thread uses its own `Z3Solver.create()`
+
+Optional runtime-compiler disk cache (Chicory):
+
+```bash
+sbt -Dscalawasiz3.chicory.runtimeCompilerCacheDir=/tmp/chicory-cache "project coreJVM" "runMain dev.bosatsu.scalawasiz3.JvmSolverBenchmarkMain --warmup 20 --iterations 200 --threads 4 --mode shared"
+```
 
 ## CI and release
 
