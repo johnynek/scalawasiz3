@@ -158,16 +158,55 @@ private[scalawasiz3] object JvmWasiZ3Solver {
           // Some WASI builds may trap during teardown after writing a valid result.
           Z3Result.Success(stdout = out, stderr = err)
         } else {
-          Z3Result.Failure(
-            message = s"Failed executing embedded z3.wasm: ${t.getMessage}",
-            exitCode = None,
-            stdout = out,
-            stderr = err,
-            cause = Some(t)
-          )
+          recoverFromTrap(input, out, err, t).getOrElse {
+            Z3Result.Failure(
+              message = s"Failed executing embedded z3.wasm: ${t.getMessage}",
+              exitCode = None,
+              stdout = out,
+              stderr = err,
+              cause = Some(t)
+            )
+          }
         }
     } finally {
       wasi.close()
+    }
+  }
+
+  private def recoverFromTrap(
+      input: String,
+      stdout: String,
+      stderr: String,
+      cause: Throwable
+  ): Option[Z3Result.Failure] = {
+    val trapMessage = Option(cause.getMessage).getOrElse("")
+    if (!Smt2TrapDiagnostics.isUnreachableTrapMessage(trapMessage)) {
+      None
+    } else {
+      Smt2TrapDiagnostics.fromInput(input) match {
+        case Some(diag) =>
+          val out = if (stdout.nonEmpty) stdout else diag.stdout
+          Some(
+            Z3Result.Failure(
+              message = s"Failed parsing/type-checking SMT2 input: ${diag.message}",
+              exitCode = None,
+              stdout = out,
+              stderr = stderr,
+              cause = Some(cause)
+            )
+          )
+        case None =>
+          Some(
+            Z3Result.Failure(
+              message =
+                "Embedded z3.wasm trapped while handling SMT2 input, likely due invalid parser/type input.",
+              exitCode = None,
+              stdout = stdout,
+              stderr = stderr,
+              cause = Some(cause)
+            )
+          )
+      }
     }
   }
 
