@@ -78,6 +78,43 @@ private[scalawasiz3] trait Z3SmtLibSyntaxAssertions { self: munit.FunSuite =>
         )
     }
 
+  protected final def assertFailsWithoutTrap(
+      source: String,
+      smt2: String,
+      expectedFragments: List[String] = Nil
+  ): Unit =
+    Z3Solver.default.runSmt2(smt2) match {
+      case Z3Result.Failure(message, _, stdout, stderr, _) =>
+        val combined = List(message, stdout, stderr).mkString("\n")
+        val combinedLc = combined.toLowerCase
+        assert(
+          !combinedLc.contains("unreachable"),
+          clues(
+            source,
+            s"message=[$message]",
+            s"stdout=[$stdout]",
+            s"stderr=[$stderr]"
+          )
+        )
+        expectedFragments.foreach { fragment =>
+          assert(
+            combinedLc.contains(fragment.toLowerCase),
+            clues(
+              source,
+              s"missing fragment=[$fragment]",
+              s"message=[$message]",
+              s"stdout=[$stdout]",
+              s"stderr=[$stderr]"
+            )
+          )
+        }
+
+      case Z3Result.Success(stdout, stderr, _) =>
+        fail(
+          s"expected non-trap failure for [$source], but solver succeeded\nstdout:\n$stdout\nstderr:\n$stderr"
+        )
+    }
+
   protected final def withCheckSat(input: String): String =
     s"""$input
        |(check-sat)

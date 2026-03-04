@@ -44,7 +44,7 @@ private[scalawasiz3] object JsWasiZ3Solver extends Z3Solver {
             stderr = ""
           )
         } else {
-          val wasi = new MiniWasi(normalizeInput(input))
+          val wasi = new MiniWasi(inputText = normalizeInput(input), originalInput = input)
           try {
             val webAssembly = js.Dynamic.global.selectDynamic("WebAssembly")
             val moduleCtor = webAssembly.selectDynamic("Module")
@@ -104,7 +104,7 @@ private[scalawasiz3] object JsWasiZ3Solver extends Z3Solver {
     out
   }
 
-  private final class MiniWasi(inputText: String) {
+  private final class MiniWasi(inputText: String, originalInput: String) {
     private val ErrnoSuccess = 0
     private val ErrnoBadf = 8
     private val ErrnoInval = 28
@@ -155,14 +155,48 @@ private[scalawasiz3] object JsWasiZ3Solver extends Z3Solver {
           if (containsStatusLine(stdoutString)) {
             Z3Result.Success(stdout = stdoutString, stderr = stderrString)
           } else {
-            Z3Result.Failure(
-              message = s"Scala.js runtime exception while running z3.wasm: ${jse.getMessage}",
-              exitCode = None,
-              stdout = stdoutString,
-              stderr = stderrString,
-              cause = Some(jse)
-            )
+            recoverFromTrap(jse).getOrElse {
+              Z3Result.Failure(
+                message = s"Scala.js runtime exception while running z3.wasm: ${jse.getMessage}",
+                exitCode = None,
+                stdout = stdoutString,
+                stderr = stderrString,
+                cause = Some(jse)
+              )
+            }
           }
+      }
+    }
+
+    private def recoverFromTrap(jse: js.JavaScriptException): Option[Z3Result.Failure] = {
+      val trapMessage = Option(jse.getMessage).getOrElse("")
+      if (!Smt2TrapDiagnostics.isUnreachableTrapMessage(trapMessage)) {
+        None
+      } else {
+        Smt2TrapDiagnostics.fromInput(originalInput) match {
+          case Some(diag) =>
+            val out = if (stdoutString.nonEmpty) stdoutString else diag.stdout
+            Some(
+              Z3Result.Failure(
+                message = s"Failed parsing/type-checking SMT2 input: ${diag.message}",
+                exitCode = None,
+                stdout = out,
+                stderr = stderrString,
+                cause = Some(jse)
+              )
+            )
+          case None =>
+            Some(
+              Z3Result.Failure(
+                message =
+                  "Embedded z3.wasm trapped while handling SMT2 input, likely due invalid parser/type input.",
+                exitCode = None,
+                stdout = stdoutString,
+                stderr = stderrString,
+                cause = Some(jse)
+              )
+            )
+        }
       }
     }
 
