@@ -20,29 +20,10 @@ import java.util.function.Function
 
 private[scalawasiz3] object JvmWasiZ3Solver {
   private val z3Arguments = java.util.List.of("z3", "-smt2", "-in")
-  private val exactAllocator = new ExactMemAllocStrategy()
-  private val memoryFactory: Function[MemoryLimits, com.dylibso.chicory.runtime.Memory] =
-    (limits: MemoryLimits) => new ByteArrayMemory(limits, exactAllocator)
 
   lazy val default: Z3Solver = create()
 
   def create(): Z3Solver = new JvmWasiZ3Solver()
-
-  private lazy val runtimeEither: Either[String, RuntimeState] =
-    compiledModuleEither.map { compiledModule =>
-      RuntimeState(
-        module = compiledModule.wasmModule(),
-        machineFactory = compiledModule.machineFactory()
-      )
-    }
-
-  private lazy val compiledModuleEither: Either[String, CompiledModule] =
-    try {
-      Right(new dev.bosatsu.scalawasiz3.aot.Z3Module())
-    } catch {
-      case t: Throwable =>
-        Left(s"Failed loading generated Chicory AOT module dev.bosatsu.scalawasiz3.aot.Z3Module: ${t.getMessage}")
-    }
 
   private final case class RuntimeState(
       module: WasmModule,
@@ -50,6 +31,26 @@ private[scalawasiz3] object JvmWasiZ3Solver {
   )
 
   private final class JvmWasiZ3Solver extends Z3Solver {
+    private val exactAllocator = new ExactMemAllocStrategy()
+    private val memoryFactory: Function[MemoryLimits, com.dylibso.chicory.runtime.Memory] =
+      (limits: MemoryLimits) => new ByteArrayMemory(limits, exactAllocator)
+
+    private lazy val runtimeEither: Either[String, RuntimeState] =
+      compiledModuleEither.map { compiledModule =>
+        RuntimeState(
+          module = compiledModule.wasmModule(),
+          machineFactory = compiledModule.machineFactory()
+        )
+      }
+
+    private lazy val compiledModuleEither: Either[String, CompiledModule] =
+      try {
+        Right(new dev.bosatsu.scalawasiz3.aot.Z3Module())
+      } catch {
+        case t: Throwable =>
+          Left(s"Failed loading generated Chicory AOT module dev.bosatsu.scalawasiz3.aot.Z3Module: ${t.getMessage}")
+      }
+
     override def runSmt2(input: String): Z3Result =
       runtimeEither match {
         case Left(err) =>
@@ -61,11 +62,15 @@ private[scalawasiz3] object JvmWasiZ3Solver {
           )
 
         case Right(runtime) =>
-          runWithRuntime(runtime, input)
+          runWithRuntime(runtime, input, memoryFactory)
       }
   }
 
-  private def runWithRuntime(runtime: RuntimeState, input: String): Z3Result = {
+  private def runWithRuntime(
+      runtime: RuntimeState,
+      input: String,
+      memoryFactory: Function[MemoryLimits, com.dylibso.chicory.runtime.Memory]
+  ): Z3Result = {
     val stdin = new ByteArrayInputStream(normalizeInput(input).getBytes(StandardCharsets.UTF_8))
     val stdout = new ByteArrayOutputStream()
     val stderr = new ByteArrayOutputStream()
