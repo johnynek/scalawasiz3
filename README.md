@@ -56,6 +56,8 @@ This repository includes a `.jvmopts` with a 4G heap because Scala.js linking fo
 ./scripts/build-z3-wasi.sh
 ```
 
+By default this builds the full Z3 `shell` WASI command entrypoint (packaged as `z3.wasm`) and links with `--strip-all --compress-relocations` for smaller wasm output.
+
 Expected local tools:
 
 - `bash`

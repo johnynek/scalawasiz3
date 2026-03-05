@@ -95,7 +95,10 @@ jobs:
         run: ./scripts/node-main-smoke.sh core/js/target/scala-3.8.1/scalawasiz3-opt/main.js
 
       - name: Build native image wrapper
-        run: sbt -J-Xms1G -J-Xmx4G -J-XX:+UseG1GC 'coreJVM/nativeImage'
+        run: |
+          sbt -J-Xms1G -J-Xmx4G -J-XX:+UseG1GC \
+            "set coreJVM / nativeImageOptions ++= Seq(\"-O2\")" \
+            'coreJVM/nativeImage'
 
       - name: Native image SAT/UNSAT smoke test
         run: ./scripts/native-image-smoke.sh core/jvm/target/native-image/scalawasiz3-z3-main

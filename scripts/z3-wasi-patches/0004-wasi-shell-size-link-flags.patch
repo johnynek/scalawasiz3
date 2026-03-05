@@ -1,0 +1,11 @@
+--- a/src/shell/CMakeLists.txt
++++ b/src/shell/CMakeLists.txt
+@@ -51,6 +51,8 @@
+ target_link_libraries(shell PRIVATE ${Z3_DEPENDENT_LIBS})
+ z3_add_component_dependencies_to_target(shell ${shell_expanded_deps})
+ z3_append_linker_flag_list_to_target(shell ${Z3_DEPENDENT_EXTRA_CXX_LINK_FLAGS})
++# Produce a smaller command module for WASI distribution.
++target_link_options(shell PRIVATE "-Wl,--strip-all" "-Wl,--compress-relocations")
+ install(TARGETS shell
+   RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+ )
