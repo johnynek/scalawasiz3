@@ -4,3 +4,4 @@ addSbtPlugin("com.github.sbt" % "sbt-ci-release" % "1.11.2")
 addSbtPlugin("org.scalameta" % "sbt-native-image" % "0.3.4")
 
 libraryDependencies += "org.lz4" % "lz4-java" % "1.8.0"
+libraryDependencies += "com.dylibso.chicory" % "build-time-compiler" % "1.7.2"
