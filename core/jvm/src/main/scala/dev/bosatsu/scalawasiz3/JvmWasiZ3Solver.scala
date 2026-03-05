@@ -20,7 +20,6 @@ import java.util.function.Function
 
 private[scalawasiz3] object JvmWasiZ3Solver {
   private val z3Arguments = java.util.List.of("z3", "-smt2", "-in")
-  private val compiledModuleClassName = "dev.bosatsu.scalawasiz3.aot.Z3Module"
   private val exactAllocator = new ExactMemAllocStrategy()
   private val memoryFactory: Function[MemoryLimits, com.dylibso.chicory.runtime.Memory] =
     (limits: MemoryLimits) => new ByteArrayMemory(limits, exactAllocator)
@@ -39,18 +38,10 @@ private[scalawasiz3] object JvmWasiZ3Solver {
 
   private lazy val compiledModuleEither: Either[String, CompiledModule] =
     try {
-      val loadedClass = Class.forName(compiledModuleClassName)
-      if (!classOf[CompiledModule].isAssignableFrom(loadedClass)) {
-        Left(s"Generated class $compiledModuleClassName does not implement CompiledModule")
-      } else {
-        val constructor = loadedClass.getDeclaredConstructor()
-        constructor.setAccessible(true)
-        val instance = constructor.newInstance().asInstanceOf[CompiledModule]
-        Right(instance)
-      }
+      Right(new dev.bosatsu.scalawasiz3.aot.Z3Module())
     } catch {
       case t: Throwable =>
-        Left(s"Failed loading generated Chicory AOT module $compiledModuleClassName: ${t.getMessage}")
+        Left(s"Failed loading generated Chicory AOT module dev.bosatsu.scalawasiz3.aot.Z3Module: ${t.getMessage}")
     }
 
   private final case class RuntimeState(
