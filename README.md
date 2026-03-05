@@ -6,13 +6,13 @@ A Scala 3.8.1 cross-platform library that embeds a WASI build of Z3 and exposes 
 
 - Single published Scala library (`dev.bosatsu.scalawasiz3`) for JVM and Scala.js.
 - Publish Maven coordinates under `dev.bosatsu:scalawasiz3` (with platform/cross suffixes where applicable).
-- Z3 built from source in CI/release and distributed as an embedded `z3.wasm` resource in published artifacts.
-- JVM execution via [Chicory](https://github.com/dylibso/chicory).
+- Z3 built from source in CI/release and used as the single source input for Scala.js embedding and JVM AOT generation.
+- JVM execution via [Chicory](https://github.com/dylibso/chicory) build-time AOT compilation.
 - Scala.js execution via an internal WASI Preview1 host (Node and browser-oriented runtime path).
 
 ## Layout
 
-- `core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm`: embedded WASI module.
+- `core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm`: source WASI module used by Scala.js embedding and JVM AOT generation.
 - `core/shared/src/main/scala/dev/bosatsu/scalawasiz3`: shared API.
 - `core/jvm/src/main/scala/dev/bosatsu/scalawasiz3`: JVM runtime.
 - `core/js/src/main/scala/dev/bosatsu/scalawasiz3`: Scala.js runtime.
@@ -56,6 +56,10 @@ Scala.js cannot load classpath resources at runtime like JVM. For JS, this proje
 
 This keeps a single source of truth (`z3.wasm`) while producing a JS-friendly runtime representation.
 
+## JVM Chicory AOT path
+
+The JVM build runs Chicory's build-time compiler from `sbt` and emits generated `.class` files plus a stripped `.meta` resource under the JVM compile output. The JVM artifact excludes raw `z3.wasm` resources and does not use Chicory runtime compiler caching.
+
 ## API
 
 ```scala
@@ -85,46 +89,6 @@ Modes:
 
 - `shared`: all benchmark threads share `Z3Solver.default`
 - `isolated`: each thread uses its own `Z3Solver.create()`
-
-### Chicory runtime-compiler directory cache
-
-Set the JVM system property `scalawasiz3.chicory.runtimeCompilerCacheDir` to enable Chicory's on-disk cache:
-
-```bash
-mkdir -p /tmp/scalawasiz3-chicory-cache
-sbt -Dscalawasiz3.chicory.runtimeCompilerCacheDir=/tmp/scalawasiz3-chicory-cache "project coreJVM" "runMain dev.bosatsu.scalawasiz3.JvmSolverBenchmarkMain --warmup 20 --iterations 200 --threads 4 --mode shared"
-```
-
-- If the property is unset, runtime-compiled bytecode is reused in-memory for the current process only.
-- If the property is set, runtime-compiled bytecode is also persisted to disk and can be reused across process restarts.
-- In this benchmark harness, steady-state throughput is usually similar either way; the cache is mainly useful for startup compile reuse.
-
-## Recent benchmark runs (M3 MacBook Air)
-
-These point-in-time runs (March 2026) used:
-
-```bash
-sbt "project coreJVM" "runMain dev.bosatsu.scalawasiz3.JvmSolverBenchmarkMain --warmup 20 --iterations 200 --threads N --mode shared"
-```
-
-Before runtime compiler path (pre-PR #20):
-
-- 1 thread: `2.51 calls/s` (200 calls in `79.794s`)
-- 4 threads: `4.50 calls/s` (200 calls in `44.478s`)
-
-After runtime compiler path (no cache dir):
-
-- 1 thread: `50.68 calls/s` (200 calls in `3.946s`)
-- 4 threads: `125.56 calls/s` (200 calls in `1.593s`)
-
-After runtime compiler path (cache dir set):
-
-- 1 thread (first cached run): `47.43 calls/s` (200 calls in `4.217s`)
-- 1 thread (warm cached run): `50.29 calls/s` (200 calls in `3.977s`)
-- 4 threads (first cached run): `135.35 calls/s` (200 calls in `1.478s`)
-- 4 threads (warm cached run): `115.56 calls/s` (200 calls in `1.731s`)
-
-Expect run-to-run variance; cache-dir benefit is primarily across fresh JVM process starts.
 
 ## CI and release
 

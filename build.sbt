@@ -1,5 +1,7 @@
 import org.scalajs.linker.interface.ModuleKind
 import sbtcrossproject.CrossPlugin.autoImport.{CrossType, crossProject}
+import com.dylibso.chicory.build.time.compiler.{Config, Generator}
+import com.dylibso.chicory.compiler.InterpreterFallback
 import net.jpountz.lz4.LZ4Factory
 import java.io.BufferedWriter
 import java.io.FileOutputStream
@@ -11,7 +13,9 @@ val chicoryVersion = "1.7.2"
 val munitVersion = "1.1.1"
 val munitScalacheckVersion = "1.1.0"
 val lz4JavaVersion = "1.8.0"
+val chicoryAotClassName = "dev.bosatsu.scalawasiz3.aot.Z3Module"
 lazy val ensureZ3WasmResources = taskKey[Unit]("Ensure generated Z3 WASM resources exist before compilation.")
+lazy val generateJvmZ3Aot = taskKey[Seq[File]]("Generate Chicory AOT classes and sources for JVM.")
 
 def lz4Compress(rawBytes: Array[Byte]): Array[Byte] = {
   val compressor = LZ4Factory.fastestInstance().highCompressor()
@@ -76,13 +80,55 @@ lazy val core =
     .jvmSettings(
       libraryDependencies ++= Seq(
         "com.dylibso.chicory" % "runtime" % chicoryVersion,
-        "com.dylibso.chicory" % "compiler" % chicoryVersion,
-        "com.dylibso.chicory" % "dircache-experimental" % chicoryVersion,
         "com.dylibso.chicory" % "wasm" % chicoryVersion,
         "com.dylibso.chicory" % "wasi" % chicoryVersion,
         "org.lz4" % "lz4-java" % lz4JavaVersion % Test,
         "org.scalameta" %% "munit-scalacheck" % munitScalacheckVersion % Test
-      )
+      ),
+      generateJvmZ3Aot := {
+        val wasmFile = (LocalRootProject / baseDirectory).value / "core" / "shared" / "src" / "main" / "resources" / "dev" / "bosatsu" / "scalawasiz3" / "z3" / "z3.wasm"
+        val classDir = (Compile / classDirectory).value
+        val sourceDir = (Compile / sourceManaged).value / "chicory-aot"
+        val interpretedFunctions = java.util.Collections.emptySet[Integer]()
+
+        if (!wasmFile.exists()) {
+          sys.error(
+            s"""Missing required Z3 WASM resource at ${wasmFile.getAbsolutePath}
+               |
+               |Run ./scripts/build-z3-wasi.sh and rerun sbt.
+               |""".stripMargin
+          )
+        }
+
+        IO.createDirectory(classDir)
+        IO.createDirectory(sourceDir)
+
+        val config = Config.builder()
+          .withWasmFile(wasmFile.toPath)
+          .withName(chicoryAotClassName)
+          .withTargetClassFolder(classDir.toPath)
+          .withTargetSourceFolder(sourceDir.toPath)
+          .withTargetWasmFolder(classDir.toPath)
+          .withInterpreterFallback(InterpreterFallback.FAIL)
+          .withInterpretedFunctions(interpretedFunctions)
+          .build()
+
+        val generator = new Generator(config)
+        val finalInterpretedFunctions = generator.generateResources()
+        generator.generateMetaWasm(finalInterpretedFunctions)
+        generator.generateSources()
+
+        val generatedSources = (sourceDir ** "*.java").get
+        if (generatedSources.isEmpty) {
+          sys.error(s"Chicory AOT generation produced no Java sources under ${sourceDir.getAbsolutePath}")
+        }
+
+        generatedSources
+      },
+      Compile / sourceGenerators += generateJvmZ3Aot.taskValue,
+      Compile / unmanagedResources / excludeFilter ~= { existing =>
+        existing || "z3.wasm" || "z3.wasm.sha256" || "z3.imports.json"
+      }
     )
     .jsSettings(
       scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.ESModule) },
@@ -152,7 +198,7 @@ lazy val coreJVM = core.jvm
     nativeImageVersion := "22.3.0",
     nativeImageOptions ++= Seq(
       "--no-fallback",
-      "-H:IncludeResources=dev/bosatsu/scalawasiz3/z3/.*"
+      "-H:IncludeResources=dev/bosatsu/scalawasiz3/aot/.*\\.meta"
     ),
     nativeImageOutput := (Compile / target).value / "native-image" / "scalawasiz3-z3-main"
   )
