@@ -199,7 +199,7 @@ BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/target/z3-wasi-build}"
 OUT_WASM="${OUT_WASM:-$ROOT_DIR/core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm}"
 OUT_SHA="${OUT_SHA:-$ROOT_DIR/core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm.sha256}"
 OUT_IMPORTS="${OUT_IMPORTS:-$ROOT_DIR/core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.imports.json}"
-WASM_BUILD_TARGET="${WASM_BUILD_TARGET:-smt2_main}"
+WASM_BUILD_TARGET="${WASM_BUILD_TARGET:-shell}"
 
 mkdir -p "$CACHE_DIR" "$BUILD_DIR"
 
