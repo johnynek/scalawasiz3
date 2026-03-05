@@ -10,6 +10,28 @@ A Scala 3.8.1 cross-platform library that embeds a WASI build of Z3 and exposes 
 - JVM execution via [Chicory](https://github.com/dylibso/chicory) build-time AOT compilation.
 - Scala.js execution via an internal WASI Preview1 host (Node and browser-oriented runtime path).
 
+## WASM/WASI challenges addressed here
+
+This project focuses on making Z3 run reliably as a WASI WebAssembly module:
+
+- avoid relying on Z3 threaded/future execution paths in the wasm build;
+- avoid using C++ exceptions as normal control flow on key solver paths (especially integer-heavy/tactic paths we have seen trap under WASM).
+
+How we do this today:
+
+- `scripts/build-z3-wasi.sh` builds Z3 with `-DZ3_SINGLE_THREADED=ON` (and `-DZ3_POLLING_TIMER=ON`) for the WASI target.
+- We apply targeted patches from `scripts/z3-wasi-patches/*.patch` that replace throw/catch control-flow patterns with explicit checks on paths we have hit in practice (including `pb2bv`/QF_LIA-related regressions).
+
+This improves parity for the SMT-LIB programs covered by our tests, but it does not guarantee all possible SMT-LIB shapes are trap-free in WASM/WASI.
+You can still hit traps (for example `unreachable`) with differently shaped inputs than the ones currently covered.
+If you find one, please open an issue with a minimal reproducer and expected behavior: <https://github.com/bosatsu/dev.bosatsu.scalawasiz3/issues/new>.
+
+References:
+
+- WebAssembly explainer: [MDN WebAssembly overview](https://developer.mozilla.org/en-US/docs/WebAssembly)
+- WASI explainer: [wasi.dev](https://wasi.dev/)
+- Canonical Z3 repository: [Z3Prover/z3](https://github.com/Z3Prover/z3)
+
 ## Layout
 
 - `core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm`: source WASI module used by Scala.js embedding and JVM AOT generation.
