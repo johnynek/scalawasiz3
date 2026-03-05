@@ -1,0 +1,110 @@
+--- a/src/shell/CMakeLists.txt
++++ b/src/shell/CMakeLists.txt
+@@ -51,6 +51,41 @@
+ target_link_libraries(shell PRIVATE ${Z3_DEPENDENT_LIBS})
+ z3_add_component_dependencies_to_target(shell ${shell_expanded_deps})
+ z3_append_linker_flag_list_to_target(shell ${Z3_DEPENDENT_EXTRA_CXX_LINK_FLAGS})
++# Produce a smaller command module for WASI distribution.
++target_link_options(shell PRIVATE "-Wl,--strip-all" "-Wl,--compress-relocations")
+ install(TARGETS shell
+   RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+ )
++
++# Reduced entrypoint for SMT2 stdin -> C API evaluation.
++set(smt2_main_deps api)
++z3_expand_dependencies(smt2_main_expanded_deps ${smt2_main_deps})
++
++set(smt2_main_object_files "")
++foreach (component ${smt2_main_expanded_deps})
++  if (NOT ("${component}" STREQUAL "api_dll"))
++    list(APPEND smt2_main_object_files $<TARGET_OBJECTS:${component}>)
++  endif()
++endforeach()
++
++add_executable(smt2_main
++  smt2_main.cpp
++  "${CMAKE_CURRENT_BINARY_DIR}/gparams_register_modules.cpp"
++  "${CMAKE_CURRENT_BINARY_DIR}/install_tactic.cpp"
++  "${CMAKE_CURRENT_BINARY_DIR}/mem_initializer.cpp"
++  ${smt2_main_object_files}
++)
++
++set_target_properties(smt2_main PROPERTIES
++    POSITION_INDEPENDENT_CODE ON
++    CXX_VISIBILITY_PRESET hidden
++    VISIBILITY_INLINES_HIDDEN ON
++    OUTPUT_NAME smt2-main)
++
++target_compile_definitions(smt2_main PRIVATE ${Z3_COMPONENT_CXX_DEFINES})
++target_compile_options(smt2_main PRIVATE ${Z3_COMPONENT_CXX_FLAGS})
++target_include_directories(smt2_main PRIVATE ${Z3_COMPONENT_EXTRA_INCLUDE_DIRS})
++target_link_libraries(smt2_main PRIVATE ${Z3_DEPENDENT_LIBS})
++z3_add_component_dependencies_to_target(smt2_main ${smt2_main_expanded_deps})
++z3_append_linker_flag_list_to_target(smt2_main ${Z3_DEPENDENT_EXTRA_CXX_LINK_FLAGS})
++target_link_options(smt2_main PRIVATE "-Wl,--strip-all" "-Wl,--compress-relocations")
+--- /dev/null
++++ b/src/shell/smt2_main.cpp
+@@ -0,0 +1,63 @@
++#include <iostream>
++#include <iterator>
++#include <string>
++
++#include "api/z3.h"
++
++namespace {
++std::string read_all_stdin() {
++    return std::string(std::istreambuf_iterator<char>(std::cin), std::istreambuf_iterator<char>());
++}
++
++bool has_exit_command(std::string const& s) {
++    return s.find("(exit)") != std::string::npos;
++}
++} // namespace
++
++int main() {
++    std::string input = read_all_stdin();
++    if (input.empty()) {
++        return 0;
++    }
++    if (input.back() != '\n') {
++        input.push_back('\n');
++    }
++    if (!has_exit_command(input)) {
++        input += "(exit)\n";
++    }
++
++    Z3_config cfg = Z3_mk_config();
++    if (!cfg) {
++        std::cerr << "(error \"failed to create Z3 config\")\n";
++        return 1;
++    }
++
++    Z3_context ctx = Z3_mk_context(cfg);
++    Z3_del_config(cfg);
++
++    if (!ctx) {
++        std::cerr << "(error \"failed to create Z3 context\")\n";
++        return 1;
++    }
++
++    // Avoid default handler aborting process; poll error code explicitly.
++    Z3_set_error_handler(ctx, nullptr);
++
++    Z3_string out = Z3_eval_smtlib2_string(ctx, input.c_str());
++    if (out && out[0] != '\0') {
++        std::cout << out;
++    }
++
++    Z3_error_code ec = Z3_get_error_code(ctx);
++    if (ec != Z3_OK) {
++        Z3_string msg = Z3_get_error_msg(ctx, ec);
++        if (msg && msg[0] != '\0') {
++            std::cerr << msg << "\n";
++        }
++        Z3_del_context(ctx);
++        return 1;
++    }
++
++    Z3_del_context(ctx);
++    return 0;
++}
