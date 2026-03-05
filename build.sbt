@@ -78,6 +78,7 @@ lazy val core =
       Compile / compile := (Compile / compile).dependsOn(ensureZ3WasmResources).value
     )
     .jvmSettings(
+      Compile / javacOptions ++= Seq("--release", "17"),
       libraryDependencies ++= Seq(
         "com.dylibso.chicory" % "runtime" % chicoryVersion,
         "com.dylibso.chicory" % "wasm" % chicoryVersion,
