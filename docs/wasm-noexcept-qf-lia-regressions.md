@@ -42,7 +42,8 @@ unsat
 
 Golden fixtures for both examples are under:
 
-- `core/jvm/src/test/resources/dev/bosatsu/scalawasiz3/golden/qf_lia_negation_case`
-- `core/jvm/src/test/resources/dev/bosatsu/scalawasiz3/golden/qf_lia_nested_subtraction_case`
+- `core/shared/src/test/golden/qf_lia_negation_case`
+- `core/shared/src/test/golden/qf_lia_nested_subtraction_case`
 
-The JVM golden suite `JvmGoldenResponsesSuite` asserts exact `stdout`/`stderr` equality against these fixtures.
+The shared golden suite `Z3GoldenResponsesSuite` runs on both Scala JVM and Scala.js.
+It loads fixture contents at compile time using the Scala 3 macro helper `CompileTimeFileLoader.readUtf8` and then asserts exact `stdout`/`stderr` equality.
