@@ -1,0 +1,6 @@
+(set-logic QF_LIA)
+(declare-const y Int)
+(declare-const z Int)
+(assert (> (+ (- (- 8) 6) z) 2))
+(assert (not (< (- y z) y)))
+(check-sat)

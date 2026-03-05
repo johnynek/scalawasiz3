@@ -1,0 +1,8 @@
+(set-logic QF_LIA)
+(declare-const u Int)
+(declare-const v Int)
+(declare-const x Int)
+(declare-const y Int)
+(assert (and (>= v (+ 8 0)) (< v (- 8))))
+(assert (not (<= (- (- y x) x) (- u (- x (- 7))))))
+(check-sat)
