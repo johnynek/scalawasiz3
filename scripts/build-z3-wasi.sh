@@ -155,26 +155,16 @@ sha256_file() {
 
 find_wasm_binary() {
   local build_dir="$1"
-  local output_name="$2"
   local candidate
   while IFS= read -r candidate; do
     if file "$candidate" | grep -q "WebAssembly"; then
       echo "$candidate"
       return 0
     fi
-  done < <(find "$build_dir" -type f \( -name "$output_name" -o -name "$output_name.wasm" \) | sort)
+  done < <(find "$build_dir" -type f \( -name "z3" -o -name "z3.wasm" \) | sort)
 
-  echo "error: unable to find built $output_name wasm executable under $build_dir" >&2
+  echo "error: unable to find built z3 wasm executable under $build_dir" >&2
   return 1
-}
-
-target_output_name() {
-  local target_name="$1"
-  case "$target_name" in
-    shell) echo "z3" ;;
-    smt2_main) echo "smt2-main" ;;
-    *) echo "$target_name" ;;
-  esac
 }
 
 require_cmd bash
@@ -199,7 +189,6 @@ BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/target/z3-wasi-build}"
 OUT_WASM="${OUT_WASM:-$ROOT_DIR/core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm}"
 OUT_SHA="${OUT_SHA:-$ROOT_DIR/core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.wasm.sha256}"
 OUT_IMPORTS="${OUT_IMPORTS:-$ROOT_DIR/core/shared/src/main/resources/dev/bosatsu/scalawasiz3/z3/z3.imports.json}"
-WASM_BUILD_TARGET="${WASM_BUILD_TARGET:-shell}"
 
 mkdir -p "$CACHE_DIR" "$BUILD_DIR"
 
@@ -257,10 +246,9 @@ CMAKE_FLAGS=(
 )
 
 cmake "${CMAKE_FLAGS[@]}"
-cmake --build "$Z3_BUILD_DIR" --target "$WASM_BUILD_TARGET" --parallel
+cmake --build "$Z3_BUILD_DIR" --target shell --parallel
 
-WASM_OUTPUT_NAME="$(target_output_name "$WASM_BUILD_TARGET")"
-BUILT_WASM="$(find_wasm_binary "$Z3_BUILD_DIR" "$WASM_OUTPUT_NAME")"
+BUILT_WASM="$(find_wasm_binary "$Z3_BUILD_DIR")"
 mkdir -p "$(dirname "$OUT_WASM")"
 cp "$BUILT_WASM" "$OUT_WASM"
 sha256_file "$OUT_WASM" "$OUT_SHA"
@@ -270,7 +258,6 @@ if command -v node >/dev/null 2>&1; then
 fi
 
 echo "Built Z3 WASI binary"
-echo "  target : $WASM_BUILD_TARGET"
 echo "  source : $BUILT_WASM"
 echo "  wasm   : $OUT_WASM"
 echo "  sha256 : $OUT_SHA"
