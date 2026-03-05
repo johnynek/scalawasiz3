@@ -102,7 +102,7 @@
          }
  
          struct rw_cfg : public default_rewriter_cfg {
-@@ -919,12 +937,8 @@
+@@ -919,11 +937,9 @@
              
              TRACE(pb2bv, m_bm.display(tout););
  
@@ -111,13 +111,25 @@
 -            }
 -            catch (non_pb& p) {
 -                throw_tactic(p.e);
--            }
-+            if (expr * e = quick_pb_check(g))
-+                throw_tactic(e);
++            if (quick_pb_check(g) != nullptr) {
++                result.reset();
++                return;
+             }
                          
              expr_ref_vector new_exprs(m);
-             expr_dependency_ref_vector new_deps(m);
-@@ -1040,27 +1054,24 @@
+@@ -953,8 +969,9 @@
+                     new_exprs.push_back(new_f);
+                 }                
+             }
+-            catch (non_pb& p) {
+-                throw_tactic(p.e);
++            catch (non_pb&) {
++                result.reset();
++                return;
+             }
+ 
+             for (unsigned idx = 0; idx < size; ++idx)
+@@ -1040,27 +1057,24 @@
  
  struct is_pb_probe : public probe {
      result operator()(goal const & g) override {
