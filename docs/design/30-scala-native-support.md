@@ -98,10 +98,11 @@ The initial binding surface should stay intentionally small:
 1. Normalize input the same way current backends do, including appending `(exit)` when missing.
 2. Create a fresh Z3 config and context.
 3. Call `Z3_eval_smtlib2_string`.
-4. Copy the returned C string into a Scala `String` immediately.
-5. Inspect the Z3 error code and message.
-6. Return `Z3Result.Success` when evaluation completed without Z3 errors, otherwise return `Z3Result.Failure` with the copied output and error text.
-7. Always destroy the native context/config in a `finally` path.
+4. Copy the returned C string into a Scala `String` immediately, because the pointer is owned by the Z3 context and is invalidated by later calls on that context or by context teardown. The design should not assume a separate caller-side free step for this returned buffer.
+5. Treat the copied string as the native backend's unified command output stream: status lines such as `sat`/`unsat`/`unknown` and SMT-LIB error text are returned through the same buffer.
+6. Determine success or failure by parsing that unified output. In the common case, `Z3Result.stdout` contains the returned text and `Z3Result.stderr` remains empty on Native. A result should be considered a failure when the unified output contains SMT-LIB error diagnostics such as `(error "...")` even if the C API itself did not fail.
+7. Only fall back to `Z3_get_error_code` and `Z3_get_error_msg` for true C API failures or misuse, such as a null return or a non-`Z3_OK` API error after the call.
+8. Always destroy the native context/config in a `finally` path.
 
 The native implementation should create a fresh context per `runSmt2` call.
 
@@ -126,6 +127,8 @@ Phase 1 support model:
 - CI should set the appropriate linker and loader search paths when running `coreNative/test`.
 
 This means the first shipped Scala Native artifact assumes `libz3` is available to the native linker/loader when a downstream application is built and run.
+
+Because `Z3_eval_smtlib2_string` unifies regular and diagnostic output, the Native backend should document one intentional semantic difference from the WASM-backed JVM/JS paths: `stderr` will usually be empty, and downstream tests should assert on semantic failure/success behavior rather than exact stdout/stderr channel splits.
 
 ## Why not publish a statically linked Z3 inside the library?
 
@@ -218,6 +221,7 @@ It would increase compile/link cost substantially, complicate publishing, and cr
 
 - Dynamic library discovery differs between Linux and macOS, so missing loader-path configuration can create flaky or confusing failures.
 - `Z3_eval_smtlib2_string` may not match the CLI/WASI stderr formatting byte-for-byte on every error path; tests should prefer semantic assertions over exact formatting where necessary.
+- The native backend will not naturally preserve the JVM/JS stdout-vs-stderr split because `Z3_eval_smtlib2_string` returns one combined output string. Tests and docs need to treat channel parity as best-effort, not guaranteed.
 - If context reuse is attempted too early, thread-safety and state-leak bugs are likely.
 - If users strongly require default static linking, additional work will be needed around C++ runtime selection, archive distribution, and per-platform linker flags.
 
