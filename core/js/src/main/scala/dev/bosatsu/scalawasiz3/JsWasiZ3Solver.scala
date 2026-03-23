@@ -44,7 +44,7 @@ private[scalawasiz3] object JsWasiZ3Solver extends Z3Solver {
             stderr = ""
           )
         } else {
-          val wasi = new MiniWasi(inputText = normalizeInput(input), originalInput = input)
+          val wasi = new MiniWasi(inputText = Z3RunSupport.normalizeInput(input), originalInput = input)
           try {
             val webAssembly = js.Dynamic.global.selectDynamic("WebAssembly")
             val moduleCtor = webAssembly.selectDynamic("Module")
@@ -87,11 +87,6 @@ private[scalawasiz3] object JsWasiZ3Solver extends Z3Solver {
           }
         }
     }
-  }
-
-  private def normalizeInput(input: String): String = {
-    val withNl = if (input.endsWith("\n")) input else s"$input\n"
-    if (withNl.contains("(exit)")) withNl else s"$withNl(exit)\n"
   }
 
   private def toUint8Array(bytes: Array[Byte]): Uint8Array = {
@@ -152,7 +147,7 @@ private[scalawasiz3] object JsWasiZ3Solver extends Z3Solver {
             cause = Some(jse)
           )
         case None =>
-          if (containsStatusLine(stdoutString)) {
+          if (Z3RunSupport.containsStatusLine(stdoutString)) {
             Z3Result.Success(stdout = stdoutString, stderr = stderrString)
           } else {
             recoverFromTrap(jse).getOrElse {
@@ -199,12 +194,6 @@ private[scalawasiz3] object JsWasiZ3Solver extends Z3Solver {
         }
       }
     }
-
-    private def containsStatusLine(stdout: String): Boolean =
-      stdout.linesIterator.exists { line =>
-        val trimmed = line.trim
-        trimmed == "sat" || trimmed == "unsat" || trimmed == "unknown"
-      }
 
     private def extractExitCode(value: Any): Option[Int] = {
       val dyn = value.asInstanceOf[js.Dynamic]
