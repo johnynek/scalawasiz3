@@ -71,7 +71,7 @@ private[scalawasiz3] object JvmWasiZ3Solver {
       input: String,
       memoryFactory: Function[MemoryLimits, com.dylibso.chicory.runtime.Memory]
   ): Z3Result = {
-    val stdin = new ByteArrayInputStream(normalizeInput(input).getBytes(StandardCharsets.UTF_8))
+    val stdin = new ByteArrayInputStream(Z3RunSupport.normalizeInput(input).getBytes(StandardCharsets.UTF_8))
     val stdout = new ByteArrayOutputStream()
     val stderr = new ByteArrayOutputStream()
 
@@ -115,7 +115,7 @@ private[scalawasiz3] object JvmWasiZ3Solver {
       case t: Throwable =>
         val out = asUtf8(stdout)
         val err = asUtf8(stderr)
-        if (containsStatusLine(out)) {
+        if (Z3RunSupport.containsStatusLine(out)) {
           // Some WASI builds may trap during teardown after writing a valid result.
           Z3Result.Success(stdout = out, stderr = err)
         } else {
@@ -171,17 +171,6 @@ private[scalawasiz3] object JvmWasiZ3Solver {
     }
   }
 
-  private def normalizeInput(input: String): String = {
-    val withNl = if (input.endsWith("\n")) input else s"$input\n"
-    if (withNl.contains("(exit)")) withNl else s"$withNl(exit)\n"
-  }
-
   private def asUtf8(out: ByteArrayOutputStream): String =
     out.toString(StandardCharsets.UTF_8)
-
-  private def containsStatusLine(stdout: String): Boolean =
-    stdout.linesIterator.exists { line =>
-      val trimmed = line.trim
-      trimmed == "sat" || trimmed == "unsat" || trimmed == "unknown"
-    }
 }

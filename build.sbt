@@ -1,5 +1,6 @@
 import org.scalajs.linker.interface.ModuleKind
 import sbtcrossproject.CrossPlugin.autoImport.{CrossType, crossProject}
+import scala.scalanative.sbtplugin.ScalaNativePlugin.autoImport.*
 import com.dylibso.chicory.build.time.compiler.{Config, Generator}
 import com.dylibso.chicory.compiler.InterpreterFallback
 import net.jpountz.lz4.LZ4Factory
@@ -16,6 +17,8 @@ val lz4JavaVersion = "1.8.0"
 val chicoryAotClassName = "dev.bosatsu.scalawasiz3.aot.Z3Module"
 lazy val ensureZ3WasmResources = taskKey[Unit]("Ensure generated Z3 WASM resources exist before compilation.")
 lazy val generateJvmZ3Aot = taskKey[Seq[File]]("Generate Chicory AOT classes and sources for JVM.")
+lazy val z3NativeLibDir = settingKey[File]("Directory containing libz3 for Scala Native link/test runs.")
+lazy val ensureZ3NativeLibrary = taskKey[Unit]("Ensure libz3 exists for Scala Native tests.")
 
 def lz4Compress(rawBytes: Array[Byte]): Array[Byte] = {
   val compressor = LZ4Factory.fastestInstance().highCompressor()
@@ -48,36 +51,59 @@ ThisBuild / developers := List(
 
 ThisBuild / Test / fork := false
 
+def defaultNativeZ3LibDir(rootDir: File): File =
+  sys.env
+    .get("SCALAWASIZ3_Z3_NATIVE_LIB_DIR")
+    .map(file)
+    .getOrElse(rootDir / "target" / "z3-native-install" / "lib")
+
+def nativeRPathOptions(libDir: File): Seq[String] = {
+  val path = libDir.getAbsolutePath
+  Seq(s"-L$path", s"-Wl,-rpath,$path")
+}
+
+def hasZ3DynamicLibrary(libDir: File): Boolean =
+  Option(libDir.listFiles()).toList.flatten.exists { file =>
+    file.isFile && (file.getName == "libz3.dylib" || file.getName.startsWith("libz3.so"))
+  }
+
+def z3WasmResourceDir(rootDir: File): File =
+  rootDir / "core" / "shared" / "src" / "main" / "resources" / "dev" / "bosatsu" / "scalawasiz3" / "z3"
+
+def z3WasmFile(rootDir: File): File =
+  z3WasmResourceDir(rootDir) / "z3.wasm"
+
+def ensureWasmResources(rootDir: File): Unit = {
+  val resourceDir = z3WasmResourceDir(rootDir)
+  val requiredFiles = Seq(
+    resourceDir / "z3.wasm",
+    resourceDir / "z3.wasm.sha256"
+  )
+  val missing = requiredFiles.filterNot(_.exists())
+  if (missing.nonEmpty) {
+    val missingText = missing.map(_.getAbsolutePath).mkString("\n  - ")
+    sys.error(
+      s"""Missing generated Z3 WASM resources:
+         |  - $missingText
+         |
+         |Run ./scripts/build-z3-wasi.sh and rerun sbt.
+         |""".stripMargin
+    )
+  }
+}
+
 lazy val core =
-  crossProject(JSPlatform, JVMPlatform)
+  crossProject(JSPlatform, JVMPlatform, NativePlatform)
     .crossType(CrossType.Full)
     .in(file("core"))
     .settings(
       name := "scalawasiz3",
       moduleName := "scalawasiz3",
-      libraryDependencies += "org.scalameta" %%% "munit" % munitVersion % Test,
-      ensureZ3WasmResources := {
-        val resourceDir =
-          (LocalRootProject / baseDirectory).value / "core" / "shared" / "src" / "main" / "resources" / "dev" / "bosatsu" / "scalawasiz3" / "z3"
-        val requiredFiles = Seq(
-          resourceDir / "z3.wasm",
-          resourceDir / "z3.wasm.sha256"
-        )
-        val missing = requiredFiles.filterNot(_.exists())
-        if (missing.nonEmpty) {
-          val missingText = missing.map(_.getAbsolutePath).mkString("\n  - ")
-          sys.error(
-            s"""Missing generated Z3 WASM resources:
-               |  - $missingText
-               |
-               |Run ./scripts/build-z3-wasi.sh and rerun sbt.
-               |""".stripMargin
-          )
-        }
-      },
-      Compile / compile := (Compile / compile).dependsOn(ensureZ3WasmResources).value
+      libraryDependencies += "org.scalameta" %%% "munit" % munitVersion % Test
     )
     .jvmSettings(
+      ensureZ3WasmResources := ensureWasmResources((LocalRootProject / baseDirectory).value),
+      Compile / compile := (Compile / compile).dependsOn(ensureZ3WasmResources).value,
       Compile / javacOptions ++= Seq("--release", "17"),
       libraryDependencies ++= Seq(
         "com.dylibso.chicory" % "runtime" % chicoryVersion,
@@ -87,7 +113,7 @@ lazy val core =
         "org.scalameta" %% "munit-scalacheck" % munitScalacheckVersion % Test
       ),
       generateJvmZ3Aot := {
-        val wasmFile = (LocalRootProject / baseDirectory).value / "core" / "shared" / "src" / "main" / "resources" / "dev" / "bosatsu" / "scalawasiz3" / "z3" / "z3.wasm"
+        val wasmFile = z3WasmFile((LocalRootProject / baseDirectory).value)
         val classDir = (Compile / classDirectory).value
         val sourceDir = (Compile / sourceManaged).value / "chicory-aot"
         val interpretedFunctions = java.util.Collections.emptySet[Integer]()
@@ -132,9 +158,11 @@ lazy val core =
       }
     )
     .jsSettings(
+      ensureZ3WasmResources := ensureWasmResources((LocalRootProject / baseDirectory).value),
+      Compile / compile := (Compile / compile).dependsOn(ensureZ3WasmResources).value,
       scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.ESModule) },
       Compile / sourceGenerators += Def.task {
-        val wasmFile = (LocalRootProject / baseDirectory).value / "core" / "shared" / "src" / "main" / "resources" / "dev" / "bosatsu" / "scalawasiz3" / "z3" / "z3.wasm"
+        val wasmFile = z3WasmFile((LocalRootProject / baseDirectory).value)
         val outDir = (Compile / sourceManaged).value / "dev" / "bosatsu" / "scalawasiz3"
         val outFile = outDir / "EmbeddedWasmBytes.scala"
         val chunkSize = 32 * 1024
@@ -190,6 +218,26 @@ lazy val core =
         Seq(outFile)
       }.taskValue
     )
+    .nativeSettings(
+      z3NativeLibDir := defaultNativeZ3LibDir((LocalRootProject / baseDirectory).value),
+      ensureZ3NativeLibrary := {
+        val libDir = z3NativeLibDir.value
+        if (!hasZ3DynamicLibrary(libDir)) {
+          sys.error(
+            s"""Missing libz3 under ${libDir.getAbsolutePath}
+               |
+               |Run ./scripts/build-z3-native.sh or set SCALAWASIZ3_Z3_NATIVE_LIB_DIR.
+               |""".stripMargin
+          )
+        }
+      },
+      nativeConfig := {
+        val cfg = nativeConfig.value
+        val libDir = z3NativeLibDir.value
+        cfg.withLinkingOptions(cfg.linkingOptions ++ nativeRPathOptions(libDir))
+      },
+      Test / test := (Test / test).dependsOn(ensureZ3NativeLibrary).value
+    )
 
 lazy val coreJVM = core.jvm
   .enablePlugins(NativeImagePlugin)
@@ -204,10 +252,11 @@ lazy val coreJVM = core.jvm
     nativeImageOutput := (Compile / target).value / "native-image" / "scalawasiz3-z3-main"
   )
 lazy val coreJS = core.js
+lazy val coreNative = core.native
 
 lazy val root = project
   .in(file("."))
-  .aggregate(coreJVM, coreJS)
+  .aggregate(coreJVM, coreJS, coreNative)
   .settings(
     name := "scalawasiz3-root",
     moduleName := "scalawasiz3-root",

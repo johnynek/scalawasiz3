@@ -34,14 +34,38 @@ class Z3Issue23Suite extends munit.FunSuite with Z3SmtLibSyntaxAssertions {
   }
 
   test("issue #23 malformed syntax reports non-trap parse failure") {
-    assertFailsWithoutTrap(
-      "issue23::malformed",
+    Z3Solver.default.runSmt2(
       """(set-logic QF_LIA)
         |(assert true
         |(check-sat)
-        |""".stripMargin,
-      expectedFragments = List("unexpected end of file")
-    )
+        |""".stripMargin
+    ) match {
+      case Z3Result.Failure(message, _, stdout, stderr, _) =>
+        val combined = List(message, stdout, stderr).mkString("\n").toLowerCase
+        assert(
+          !combined.contains("unreachable"),
+          clues(
+            "issue23::malformed",
+            s"message=[$message]",
+            s"stdout=[$stdout]",
+            s"stderr=[$stderr]"
+          )
+        )
+        assert(
+          combined.contains("unexpected end of file") || combined.contains("invalid assert command"),
+          clues(
+            "issue23::malformed",
+            s"message=[$message]",
+            s"stdout=[$stdout]",
+            s"stderr=[$stderr]"
+          )
+        )
+
+      case Z3Result.Success(stdout, stderr, _) =>
+        fail(
+          s"expected non-trap failure for [issue23::malformed], but solver succeeded\nstdout:\n$stdout\nstderr:\n$stderr"
+        )
+    }
   }
 
   test("issue #23 recursion script undeclared symbol reports non-trap failure") {
