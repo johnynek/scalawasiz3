@@ -67,6 +67,31 @@ def hasZ3DynamicLibrary(libDir: File): Boolean =
     file.isFile && (file.getName == "libz3.dylib" || file.getName.startsWith("libz3.so"))
   }
 
+def z3WasmResourceDir(rootDir: File): File =
+  rootDir / "core" / "shared" / "src" / "main" / "resources" / "dev" / "bosatsu" / "scalawasiz3" / "z3"
+
+def z3WasmFile(rootDir: File): File =
+  z3WasmResourceDir(rootDir) / "z3.wasm"
+
+def ensureWasmResources(rootDir: File): Unit = {
+  val resourceDir = z3WasmResourceDir(rootDir)
+  val requiredFiles = Seq(
+    resourceDir / "z3.wasm",
+    resourceDir / "z3.wasm.sha256"
+  )
+  val missing = requiredFiles.filterNot(_.exists())
+  if (missing.nonEmpty) {
+    val missingText = missing.map(_.getAbsolutePath).mkString("\n  - ")
+    sys.error(
+      s"""Missing generated Z3 WASM resources:
+         |  - $missingText
+         |
+         |Run ./scripts/build-z3-wasi.sh and rerun sbt.
+         |""".stripMargin
+    )
+  }
+}
+
 lazy val core =
   crossProject(JSPlatform, JVMPlatform, NativePlatform)
     .crossType(CrossType.Full)
@@ -77,25 +102,7 @@ lazy val core =
       libraryDependencies += "org.scalameta" %%% "munit" % munitVersion % Test
     )
     .jvmSettings(
-      ensureZ3WasmResources := {
-        val resourceDir =
-          (LocalRootProject / baseDirectory).value / "core" / "shared" / "src" / "main" / "resources" / "dev" / "bosatsu" / "scalawasiz3" / "z3"
-        val requiredFiles = Seq(
-          resourceDir / "z3.wasm",
-          resourceDir / "z3.wasm.sha256"
-        )
-        val missing = requiredFiles.filterNot(_.exists())
-        if (missing.nonEmpty) {
-          val missingText = missing.map(_.getAbsolutePath).mkString("\n  - ")
-          sys.error(
-            s"""Missing generated Z3 WASM resources:
-               |  - $missingText
-               |
-               |Run ./scripts/build-z3-wasi.sh and rerun sbt.
-               |""".stripMargin
-          )
-        }
-      },
+      ensureZ3WasmResources := ensureWasmResources((LocalRootProject / baseDirectory).value),
       Compile / compile := (Compile / compile).dependsOn(ensureZ3WasmResources).value,
       Compile / javacOptions ++= Seq("--release", "17"),
       libraryDependencies ++= Seq(
@@ -106,7 +113,7 @@ lazy val core =
         "org.scalameta" %% "munit-scalacheck" % munitScalacheckVersion % Test
       ),
       generateJvmZ3Aot := {
-        val wasmFile = (LocalRootProject / baseDirectory).value / "core" / "shared" / "src" / "main" / "resources" / "dev" / "bosatsu" / "scalawasiz3" / "z3" / "z3.wasm"
+        val wasmFile = z3WasmFile((LocalRootProject / baseDirectory).value)
         val classDir = (Compile / classDirectory).value
         val sourceDir = (Compile / sourceManaged).value / "chicory-aot"
         val interpretedFunctions = java.util.Collections.emptySet[Integer]()
@@ -151,29 +158,11 @@ lazy val core =
       }
     )
     .jsSettings(
-      ensureZ3WasmResources := {
-        val resourceDir =
-          (LocalRootProject / baseDirectory).value / "core" / "shared" / "src" / "main" / "resources" / "dev" / "bosatsu" / "scalawasiz3" / "z3"
-        val requiredFiles = Seq(
-          resourceDir / "z3.wasm",
-          resourceDir / "z3.wasm.sha256"
-        )
-        val missing = requiredFiles.filterNot(_.exists())
-        if (missing.nonEmpty) {
-          val missingText = missing.map(_.getAbsolutePath).mkString("\n  - ")
-          sys.error(
-            s"""Missing generated Z3 WASM resources:
-               |  - $missingText
-               |
-               |Run ./scripts/build-z3-wasi.sh and rerun sbt.
-               |""".stripMargin
-          )
-        }
-      },
+      ensureZ3WasmResources := ensureWasmResources((LocalRootProject / baseDirectory).value),
       Compile / compile := (Compile / compile).dependsOn(ensureZ3WasmResources).value,
       scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.ESModule) },
       Compile / sourceGenerators += Def.task {
-        val wasmFile = (LocalRootProject / baseDirectory).value / "core" / "shared" / "src" / "main" / "resources" / "dev" / "bosatsu" / "scalawasiz3" / "z3" / "z3.wasm"
+        val wasmFile = z3WasmFile((LocalRootProject / baseDirectory).value)
         val outDir = (Compile / sourceManaged).value / "dev" / "bosatsu" / "scalawasiz3"
         val outFile = outDir / "EmbeddedWasmBytes.scala"
         val chunkSize = 32 * 1024
