@@ -1,13 +1,33 @@
 import org.scalajs.linker.interface.ModuleKind
 import sbtcrossproject.CrossPlugin.autoImport.{CrossType, crossProject}
+import scala.scalanative.sbtplugin.ScalaNativePlugin.autoImport.*
+import com.dylibso.chicory.build.time.compiler.{Config, Generator}
+import com.dylibso.chicory.compiler.InterpreterFallback
+import net.jpountz.lz4.LZ4Factory
 import java.io.BufferedWriter
 import java.io.FileOutputStream
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 
-val chicoryVersion = "1.4.0"
+val chicoryVersion = "1.7.2"
 val munitVersion = "1.1.1"
+val munitScalacheckVersion = "1.1.0"
+val lz4JavaVersion = "1.8.0"
+val chicoryAotClassName = "dev.bosatsu.scalawasiz3.aot.Z3Module"
+lazy val ensureZ3WasmResources = taskKey[Unit]("Ensure generated Z3 WASM resources exist before compilation.")
+lazy val generateJvmZ3Aot = taskKey[Seq[File]]("Generate Chicory AOT classes and sources for JVM.")
+lazy val z3NativeLibDir = settingKey[File]("Directory containing libz3 for Scala Native link/test runs.")
+lazy val ensureZ3NativeLibrary = taskKey[Unit]("Ensure libz3 exists for Scala Native tests.")
+
+def lz4Compress(rawBytes: Array[Byte]): Array[Byte] = {
+  val compressor = LZ4Factory.fastestInstance().highCompressor()
+  val maxCompressedLength = compressor.maxCompressedLength(rawBytes.length)
+  val compressedBuffer = new Array[Byte](maxCompressedLength)
+  val compressedLength =
+    compressor.compress(rawBytes, 0, rawBytes.length, compressedBuffer, 0, maxCompressedLength)
+  java.util.Arrays.copyOf(compressedBuffer, compressedLength)
+}
 
 ThisBuild / organization := "dev.bosatsu"
 ThisBuild / scalaVersion := "3.8.1"
@@ -31,8 +51,49 @@ ThisBuild / developers := List(
 
 ThisBuild / Test / fork := false
 
+def defaultNativeZ3LibDir(rootDir: File): File =
+  sys.env
+    .get("SCALAWASIZ3_Z3_NATIVE_LIB_DIR")
+    .map(file)
+    .getOrElse(rootDir / "target" / "z3-native-install" / "lib")
+
+def nativeRPathOptions(libDir: File): Seq[String] = {
+  val path = libDir.getAbsolutePath
+  Seq(s"-L$path", s"-Wl,-rpath,$path")
+}
+
+def hasZ3DynamicLibrary(libDir: File): Boolean =
+  Option(libDir.listFiles()).toList.flatten.exists { file =>
+    file.isFile && (file.getName == "libz3.dylib" || file.getName.startsWith("libz3.so"))
+  }
+
+def z3WasmResourceDir(rootDir: File): File =
+  rootDir / "core" / "shared" / "src" / "main" / "resources" / "dev" / "bosatsu" / "scalawasiz3" / "z3"
+
+def z3WasmFile(rootDir: File): File =
+  z3WasmResourceDir(rootDir) / "z3.wasm"
+
+def ensureWasmResources(rootDir: File): Unit = {
+  val resourceDir = z3WasmResourceDir(rootDir)
+  val requiredFiles = Seq(
+    resourceDir / "z3.wasm",
+    resourceDir / "z3.wasm.sha256"
+  )
+  val missing = requiredFiles.filterNot(_.exists())
+  if (missing.nonEmpty) {
+    val missingText = missing.map(_.getAbsolutePath).mkString("\n  - ")
+    sys.error(
+      s"""Missing generated Z3 WASM resources:
+         |  - $missingText
+         |
+         |Run ./scripts/build-z3-wasi.sh and rerun sbt.
+         |""".stripMargin
+    )
+  }
+}
+
 lazy val core =
-  crossProject(JSPlatform, JVMPlatform)
+  crossProject(JSPlatform, JVMPlatform, NativePlatform)
     .crossType(CrossType.Full)
     .in(file("core"))
     .settings(
@@ -41,136 +102,141 @@ lazy val core =
       libraryDependencies += "org.scalameta" %%% "munit" % munitVersion % Test
     )
     .jvmSettings(
+      ensureZ3WasmResources := ensureWasmResources((LocalRootProject / baseDirectory).value),
+      Compile / compile := (Compile / compile).dependsOn(ensureZ3WasmResources).value,
+      Compile / javacOptions ++= Seq("--release", "17"),
       libraryDependencies ++= Seq(
         "com.dylibso.chicory" % "runtime" % chicoryVersion,
         "com.dylibso.chicory" % "wasm" % chicoryVersion,
-        "com.dylibso.chicory" % "wasi" % chicoryVersion
-      )
+        "com.dylibso.chicory" % "wasi" % chicoryVersion,
+        "org.lz4" % "lz4-java" % lz4JavaVersion % Test,
+        "org.scalameta" %% "munit-scalacheck" % munitScalacheckVersion % Test
+      ),
+      generateJvmZ3Aot := {
+        val wasmFile = z3WasmFile((LocalRootProject / baseDirectory).value)
+        val classDir = (Compile / classDirectory).value
+        val sourceDir = (Compile / sourceManaged).value / "chicory-aot"
+        val interpretedFunctions = java.util.Collections.emptySet[Integer]()
+
+        if (!wasmFile.exists()) {
+          sys.error(
+            s"""Missing required Z3 WASM resource at ${wasmFile.getAbsolutePath}
+               |
+               |Run ./scripts/build-z3-wasi.sh and rerun sbt.
+               |""".stripMargin
+          )
+        }
+
+        IO.createDirectory(classDir)
+        IO.createDirectory(sourceDir)
+
+        val config = Config.builder()
+          .withWasmFile(wasmFile.toPath)
+          .withName(chicoryAotClassName)
+          .withTargetClassFolder(classDir.toPath)
+          .withTargetSourceFolder(sourceDir.toPath)
+          .withTargetWasmFolder(classDir.toPath)
+          .withInterpreterFallback(InterpreterFallback.FAIL)
+          .withInterpretedFunctions(interpretedFunctions)
+          .build()
+
+        val generator = new Generator(config)
+        val finalInterpretedFunctions = generator.generateResources()
+        generator.generateMetaWasm(finalInterpretedFunctions)
+        generator.generateSources()
+
+        val generatedSources = (sourceDir ** "*.java").get
+        if (generatedSources.isEmpty) {
+          sys.error(s"Chicory AOT generation produced no Java sources under ${sourceDir.getAbsolutePath}")
+        }
+
+        generatedSources
+      },
+      Compile / sourceGenerators += generateJvmZ3Aot.taskValue,
+      Compile / unmanagedResources / excludeFilter ~= { existing =>
+        existing || "z3.wasm" || "z3.wasm.sha256" || "z3.imports.json"
+      }
     )
     .jsSettings(
+      ensureZ3WasmResources := ensureWasmResources((LocalRootProject / baseDirectory).value),
+      Compile / compile := (Compile / compile).dependsOn(ensureZ3WasmResources).value,
       scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.ESModule) },
       Compile / sourceGenerators += Def.task {
-        val log = streams.value.log
-        val wasmFile = (LocalRootProject / baseDirectory).value / "core" / "shared" / "src" / "main" / "resources" / "dev" / "bosatsu" / "scalawasiz3" / "z3" / "z3.wasm"
+        val wasmFile = z3WasmFile((LocalRootProject / baseDirectory).value)
         val outDir = (Compile / sourceManaged).value / "dev" / "bosatsu" / "scalawasiz3"
         val outFile = outDir / "EmbeddedWasmBytes.scala"
         val chunkSize = 32 * 1024
+
+        if (!wasmFile.exists()) {
+          sys.error(
+            s"""Missing required Z3 WASM resource at ${wasmFile.getAbsolutePath}
+               |
+               |Run ./scripts/build-z3-wasi.sh and rerun sbt.
+               |""".stripMargin
+          )
+        }
 
         IO.createDirectory(outDir)
         val writer: BufferedWriter =
           new BufferedWriter(new OutputStreamWriter(new FileOutputStream(outFile), StandardCharsets.UTF_8))
 
         try {
-          if (wasmFile.exists()) {
-            val bytes = IO.readBytes(wasmFile)
-            val encoder = Base64.getEncoder
+          val bytes = IO.readBytes(wasmFile)
+          val uncompressedSize = bytes.length
+          val compressedBytes = lz4Compress(bytes)
+          val encoder = Base64.getEncoder
 
-            writer.write("package dev.bosatsu.scalawasiz3\n\n")
-            writer.write("private[scalawasiz3] object EmbeddedWasmBytes {\n")
-            writer.write("  private val base64Chunks: Array[String] = Array(\n")
+          writer.write("package dev.bosatsu.scalawasiz3\n\n")
+          writer.write("private[scalawasiz3] object EmbeddedWasmBytes {\n")
+          writer.write(s"  val uncompressedSize: Int = $uncompressedSize\n\n")
+          writer.write("  private val lz4Base64Chunks: Array[String] = Array(\n")
 
-            var first = true
-            val chunkIter = bytes.grouped(chunkSize)
-            while (chunkIter.hasNext) {
-              val encoded = encoder.encodeToString(chunkIter.next())
-              if (!first) {
-                writer.write(",\n")
-              }
-              writer.write("    \"")
-              writer.write(encoded)
-              writer.write("\"")
-              first = false
+          var first = true
+          val chunkIter = compressedBytes.grouped(chunkSize)
+          while (chunkIter.hasNext) {
+            val encoded = encoder.encodeToString(chunkIter.next())
+            if (!first) {
+              writer.write(",\n")
             }
-            writer.write("\n  )\n\n")
-
-            writer.write(
-              """  private val decodeTable: Array[Int] = {
-                |    val table = Array.fill(256)(-1)
-                |    val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-                |    var i = 0
-                |    while (i < alphabet.length) {
-                |      table(alphabet.charAt(i).toInt) = i
-                |      i += 1
-                |    }
-                |    table('='.toInt) = 0
-                |    table
-                |  }
-                |
-                |  private def decodeChunk(chunk: String): Array[Byte] = {
-                |    val len = chunk.length
-                |    var padding = 0
-                |    if (len >= 1 && chunk.charAt(len - 1) == '=') padding += 1
-                |    if (len >= 2 && chunk.charAt(len - 2) == '=') padding += 1
-                |    val out = new Array[Byte](((len * 3) / 4) - padding)
-                |
-                |    var inPos = 0
-                |    var outPos = 0
-                |    while (inPos < len) {
-                |      val c0 = decodeTable(chunk.charAt(inPos).toInt)
-                |      val c1 = decodeTable(chunk.charAt(inPos + 1).toInt)
-                |      val c2 = decodeTable(chunk.charAt(inPos + 2).toInt)
-                |      val c3 = decodeTable(chunk.charAt(inPos + 3).toInt)
-                |      val bits = (c0 << 18) | (c1 << 12) | (c2 << 6) | c3
-                |
-                |      out(outPos) = ((bits >>> 16) & 0xff).toByte
-                |      outPos += 1
-                |      if (outPos < out.length) {
-                |        out(outPos) = ((bits >>> 8) & 0xff).toByte
-                |        outPos += 1
-                |      }
-                |      if (outPos < out.length) {
-                |        out(outPos) = (bits & 0xff).toByte
-                |        outPos += 1
-                |      }
-                |
-                |      inPos += 4
-                |    }
-                |
-                |    out
-                |  }
-                |
-                |  lazy val wasm: Array[Byte] = {
-                |    val decodedChunks = new Array[Array[Byte]](base64Chunks.length)
-                |    var total = 0
-                |    var idx = 0
-                |    while (idx < base64Chunks.length) {
-                |      val decoded = decodeChunk(base64Chunks(idx))
-                |      decodedChunks(idx) = decoded
-                |      total += decoded.length
-                |      idx += 1
-                |    }
-                |
-                |    val out = new Array[Byte](total)
-                |    var pos = 0
-                |    idx = 0
-                |    while (idx < decodedChunks.length) {
-                |      val chunk = decodedChunks(idx)
-                |      java.lang.System.arraycopy(chunk, 0, out, pos, chunk.length)
-                |      pos += chunk.length
-                |      idx += 1
-                |    }
-                |    out
-                |  }
-                |}
-                |""".stripMargin
-            )
-          } else {
-            log.warn(s"WASM resource not found at ${wasmFile.getAbsolutePath}; generating empty placeholder bytes for Scala.js compile")
-            writer.write(
-              """package dev.bosatsu.scalawasiz3
-                |
-                |private[scalawasiz3] object EmbeddedWasmBytes {
-                |  lazy val wasm: Array[Byte] = Array.emptyByteArray
-                |}
-                |""".stripMargin
-            )
+            writer.write("    \"")
+            writer.write(encoded)
+            writer.write("\"")
+            first = false
           }
+          writer.write("\n  )\n\n")
+
+          writer.write(
+            """  def wasm: Option[Array[Byte]] =
+              |    EmbeddedWasmSupport.decodeAndDecompressLz4(lz4Base64Chunks, uncompressedSize)
+              |}
+              |""".stripMargin
+          )
         } finally {
           writer.close()
         }
 
         Seq(outFile)
       }.taskValue
+    )
+    .nativeSettings(
+      z3NativeLibDir := defaultNativeZ3LibDir((LocalRootProject / baseDirectory).value),
+      ensureZ3NativeLibrary := {
+        val libDir = z3NativeLibDir.value
+        if (!hasZ3DynamicLibrary(libDir)) {
+          sys.error(
+            s"""Missing libz3 under ${libDir.getAbsolutePath}
+               |
+               |Run ./scripts/build-z3-native.sh or set SCALAWASIZ3_Z3_NATIVE_LIB_DIR.
+               |""".stripMargin
+          )
+        }
+      },
+      nativeConfig := {
+        val cfg = nativeConfig.value
+        val libDir = z3NativeLibDir.value
+        cfg.withLinkingOptions(cfg.linkingOptions ++ nativeRPathOptions(libDir))
+      },
+      Test / test := (Test / test).dependsOn(ensureZ3NativeLibrary).value
     )
 
 lazy val coreJVM = core.jvm
@@ -181,15 +247,16 @@ lazy val coreJVM = core.jvm
     nativeImageVersion := "22.3.0",
     nativeImageOptions ++= Seq(
       "--no-fallback",
-      "-H:IncludeResources=dev/bosatsu/scalawasiz3/z3/.*"
+      "-H:IncludeResources=dev/bosatsu/scalawasiz3/aot/.*\\.meta"
     ),
     nativeImageOutput := (Compile / target).value / "native-image" / "scalawasiz3-z3-main"
   )
 lazy val coreJS = core.js
+lazy val coreNative = core.native
 
 lazy val root = project
   .in(file("."))
-  .aggregate(coreJVM, coreJS)
+  .aggregate(coreJVM, coreJS, coreNative)
   .settings(
     name := "scalawasiz3-root",
     moduleName := "scalawasiz3-root",
