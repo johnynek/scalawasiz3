@@ -1,0 +1,62 @@
+--- a/src/tactic/smtlogics/qflia_tactic.cpp
++++ b/src/tactic/smtlogics/qflia_tactic.cpp
+@@ -36,6 +36,23 @@
+ #include "ast/simplifiers/bound_manager.h"
+ #include "tactic/arith/probe_arith.h"
+ 
++class fail_if_undecided_noexcept_tactic : public skip_tactic {
++public:
++    char const* name() const override { return "fail_if_undecided_noexcept"; }
++
++    void operator()(goal_ref const & in, goal_ref_buffer& result) override {
++        if (!in->is_decided()) {
++            result.reset();
++            return;
++        }
++        skip_tactic::operator()(in, result);
++    }
++};
++
++static tactic * mk_fail_if_undecided_noexcept_tactic() {
++    return alloc(fail_if_undecided_noexcept_tactic);
++}
++
+ struct quasi_pb_probe : public probe {
+     result operator()(goal const & g) override {
+         bool found_non_01 = false;
+@@ -113,7 +130,7 @@
+                  or_else(and_then(fail_if(mk_ge(mk_num_exprs_probe(), mk_const_probe(SMALL_SIZE))),
+                                   fail_if_not(mk_is_ilp_probe()),
+                                   // try_for(mk_mip_tactic(m), 8000),
+-                                  mk_fail_if_undecided_tactic()),
++                                  mk_fail_if_undecided_noexcept_tactic()),
+                          and_then(using_params(mk_pb2bv_tactic(m), pb2bv_p),
+                                   fail_if_not(mk_is_qfbv_probe()),
+                                   using_params(mk_bv2sat_tactic(m), bv2sat_p)))));
+@@ -165,7 +182,7 @@
+                               try_for(mk_lia2sat_tactic(m), 10000))
+                      // , mk_mip_tactic(m)
+                          ),
+-                 mk_fail_if_undecided_tactic()));
++                 mk_fail_if_undecided_noexcept_tactic()));
+ }
+ 
+ static tactic * mk_bounded_tactic(ast_manager & m) {
+@@ -176,7 +193,7 @@
+                          try_for(mk_no_cut_no_relevancy_smt_tactic(m, 200), 5000),
+                          try_for(mk_no_cut_smt_tactic(m, 300), 15000)
+                          ),
+-                 mk_fail_if_undecided_tactic()));
++                 mk_fail_if_undecided_noexcept_tactic()));
+ }
+ 
+ tactic * mk_preamble_tactic(ast_manager& m) {
+@@ -232,7 +249,7 @@
+                 mk_pb_tactic(m),
+                 and_then(fail_if_not(mk_is_quasi_pb_probe()),
+                     using_params(mk_lia2sat_tactic(m), quasi_pb_p),
+-                    mk_fail_if_undecided_tactic()),
++                    mk_fail_if_undecided_noexcept_tactic()),
+                 mk_bounded_tactic(m),
+                 mk_smt_tactic(m))),
+         main_p);

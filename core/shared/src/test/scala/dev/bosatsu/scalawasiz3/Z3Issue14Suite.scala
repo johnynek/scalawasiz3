@@ -127,6 +127,59 @@ class Z3Issue14Suite extends munit.FunSuite {
     )
   }
 
+  test("bosatsu pathImplies strict interval contradiction is unsat") {
+    assertStatus(
+      """(set-logic QF_LIA)
+        |(declare-const v Int)
+        |(declare-const z Int)
+        |(assert (< v (+ z v)))
+        |(assert (not (<= 1 z)))
+        |(check-sat)
+        |""".stripMargin,
+      "unsat"
+    )
+  }
+
+  test("qflia tactic fallback proves the bosatsu contradiction unsat") {
+    assertStatus(
+      """(set-logic QF_LIA)
+        |(declare-const v Int)
+        |(declare-const z Int)
+        |(assert (< v (+ z v)))
+        |(assert (not (<= 1 z)))
+        |(check-sat-using qflia)
+        |""".stripMargin,
+      "unsat"
+    )
+  }
+
+  test("qflia tactic fallback does not turn the sat twin into unsat") {
+    assertStatus(
+      """(set-logic QF_LIA)
+        |(declare-const v Int)
+        |(declare-const z Int)
+        |(assert (< v (+ z v)))
+        |(assert (<= 1 z))
+        |(check-sat-using qflia)
+        |(get-model)
+        |""".stripMargin,
+      "sat",
+      expectModel = true,
+      expectedSymbolsInModel = List("v", "z")
+    )
+  }
+
+  test("non-applicable pb2bv tactic stays unknown instead of trapping") {
+    assertStatus(
+      """(set-logic QF_LIA)
+        |(declare-const x Int)
+        |(assert (> x 0))
+        |(check-sat-using (then pb2bv fail-if-undecided))
+        |""".stripMargin,
+      "unknown"
+    )
+  }
+
   test("design doc obligation query shape works with concrete PC and GOAL") {
     assertStatus(
       """(set-logic QF_LIA)
