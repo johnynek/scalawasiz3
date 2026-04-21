@@ -127,6 +127,19 @@ class Z3Issue14Suite extends munit.FunSuite {
     )
   }
 
+  test("bosatsu pathImplies strict interval contradiction is unsat") {
+    assertStatus(
+      """(set-logic QF_LIA)
+        |(declare-const v Int)
+        |(declare-const z Int)
+        |(assert (< v (+ z v)))
+        |(assert (not (<= 1 z)))
+        |(check-sat)
+        |""".stripMargin,
+      "unsat"
+    )
+  }
+
   test("design doc obligation query shape works with concrete PC and GOAL") {
     assertStatus(
       """(set-logic QF_LIA)
