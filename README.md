@@ -232,7 +232,9 @@ policy or setup changes are picked up for newly captured work. A host-native
 service rejects setup-bearing overlays and retains its startup baseline.
 
 Run `scripts/test.sh` for the full local WASI/native build and JVM, Scala.js and
-Scala Native suites. Setup supplies sbt, Node 22 and the Linux native build tools.
+Scala Native suites. Setup supplies sbt, Node 22 and LLVM 19 with libc++ for Z3's C++20
+requirements on the Debian worker image. Setup compiles and runs a small
+`std::format` probe before starting the longer repository tests.
 The test script defaults CMake builds to two jobs; set
 `CMAKE_BUILD_PARALLEL_LEVEL` to override that limit. Browser, upstream C++ and
 GraalVM native-image checks remain additional CI checks.

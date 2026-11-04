@@ -58,8 +58,30 @@ for binary in node npm npx; do
 done
 node --version
 
-# Native/WASI Z3 and Scala Native build tools from the Linux CI workflow.
+# The Bookworm worker's GCC 12 lacks C++20 <format>, required by current Z3.
+# Debian supplies LLVM 19 and libc++ without adding a third-party package source.
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-  clang cmake llvm ninja-build python3 file patch
+  clang-19 llvm-19 libc++-19-dev libc++abi-19-dev \
+  cmake ninja-build python3 file patch
 rm -rf /var/lib/apt/lists/*
+
+# Persist the compiler selection for both CMake and Scala Native after setup exits.
+ln -sf /usr/bin/clang-19 /usr/local/bin/clang
+ln -sf clang /usr/local/bin/cc
+ln -sf /usr/bin/llvm-config-19 /usr/local/bin/llvm-config
+cat > "$staging_dir/clang++" <<'COMPILER'
+#!/usr/bin/env bash
+exec /usr/bin/clang++-19 -stdlib=libc++ "$@"
+COMPILER
+install -m 755 "$staging_dir/clang++" /usr/local/bin/clang++
+ln -sf clang++ /usr/local/bin/c++
+clang --version
+
+# Fail during setup, before the long Z3 builds, if the C++ library is unsuitable.
+cat > "$staging_dir/format.cpp" <<'CPP'
+#include <format>
+int main() { return std::format("{}", 42) != "42"; }
+CPP
+c++ -std=c++20 "$staging_dir/format.cpp" -o "$staging_dir/format"
+"$staging_dir/format"
