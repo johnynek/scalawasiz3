@@ -217,3 +217,22 @@ Required GitHub secrets for release:
 JVM/Scala.js compilation requires generated `z3.wasm` resources. If `sbt` reports missing `z3.wasm` or `z3.wasm.sha256`, run `./scripts/build-z3-wasi.sh` and rerun the build.
 
 Scala Native compile/test does not require `z3.wasm`, but native test/link runs do require `libz3`. If `coreNative/test` reports missing `libz3`, run `./scripts/build-z3-native.sh` and rerun the build.
+
+## MergeXO container setup
+
+`.mergexo.toml` holds repository-owned policy and selects
+`scripts/container_setup.sh`. MergeXO captures that standalone script before
+checkout and runs it as root inside each disposable worker container. Do not run
+it on your workstation. The setup installs the CI JDK (Temurin 17); downloaded
+tool archives are version- and checksum-pinned.
+
+The service still owns the worker backend, credentials and permissions. Enabling
+containers requires a service configuration change and restart; later repo
+policy or setup changes are picked up for newly captured work. A host-native
+service rejects setup-bearing overlays and retains its startup baseline.
+
+Run `scripts/test.sh` for the full local WASI/native build and JVM, Scala.js and
+Scala Native suites. Setup supplies sbt, Node 22 and the Linux native build tools.
+The test script defaults CMake builds to two jobs; set
+`CMAKE_BUILD_PARALLEL_LEVEL` to override that limit. Browser, upstream C++ and
+GraalVM native-image checks remain additional CI checks.
