@@ -246,7 +246,7 @@ CMAKE_FLAGS=(
 )
 
 cmake "${CMAKE_FLAGS[@]}"
-cmake --build "$Z3_BUILD_DIR" --target shell --parallel
+cmake --build "$Z3_BUILD_DIR" --target shell
 
 BUILT_WASM="$(find_wasm_binary "$Z3_BUILD_DIR")"
 mkdir -p "$(dirname "$OUT_WASM")"

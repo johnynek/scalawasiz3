@@ -104,7 +104,7 @@ CMAKE_FLAGS=(
 )
 
 cmake "${CMAKE_FLAGS[@]}"
-cmake --build "$Z3_BUILD_DIR" --parallel
+cmake --build "$Z3_BUILD_DIR"
 cmake --install "$Z3_BUILD_DIR"
 
 LIBZ3_PATH="$(find_shared_library "$INSTALL_DIR")"

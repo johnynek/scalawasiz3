@@ -234,7 +234,8 @@ lazy val core =
       nativeConfig := {
         val cfg = nativeConfig.value
         val libDir = z3NativeLibDir.value
-        cfg.withLinkingOptions(cfg.linkingOptions ++ nativeRPathOptions(libDir))
+        // Prefer the configured Z3 over a different version installed by the host.
+        cfg.withLinkingOptions(nativeRPathOptions(libDir) ++ cfg.linkingOptions)
       },
       Test / test := (Test / test).dependsOn(ensureZ3NativeLibrary).value
     )

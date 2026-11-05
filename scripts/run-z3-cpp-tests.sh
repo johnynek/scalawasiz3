@@ -91,7 +91,7 @@ CMAKE_FLAGS=(
 )
 
 cmake "${CMAKE_FLAGS[@]}"
-cmake --build "$BUILD_DIR" --target test-z3 --parallel
+cmake --build "$BUILD_DIR" --target test-z3
 
 TIME_BIN="/usr/bin/time"
 if [[ ! -x "$TIME_BIN" ]]; then
